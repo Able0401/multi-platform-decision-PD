@@ -2,6 +2,7 @@ import "./App.css";
 import { StoreProvider, useStore } from "./state/store";
 import SessionBar from "./components/SessionBar";
 import NameEntry from "./components/NameEntry";
+import IntroPages from "./components/IntroPages";
 import AdminView from "./components/AdminView";
 import Step2Timeline from "./steps/Step2Timeline";
 import Step3Canvas from "./steps/Step3Canvas";
@@ -35,6 +36,8 @@ function ParticipantShell() {
 function Shell() {
   const { state } = useStore();
   if (state.mode === "admin") return <AdminView />;
+  if (state.mode === "intro" && state.currentParticipantId)
+    return <IntroPages />;
   if (state.mode === "participant" && state.currentParticipantId)
     return <ParticipantShell />;
   return <NameEntry />;

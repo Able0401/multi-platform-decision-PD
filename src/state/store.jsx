@@ -12,9 +12,10 @@ const blankParticipant = (id) => ({
 });
 
 const initialState = {
-  mode: "entry", // "entry" | "participant" | "admin"
+  mode: "entry", // "entry" | "intro" | "participant" | "admin"
   currentParticipantId: null,
   currentStep: 2,
+  introStepIndex: 0,
   participants: {},
   customComponents: [],
   customEmotions: [],
@@ -30,6 +31,7 @@ function loadInitial() {
       // Always boot to the entry screen — name re-entry is intentional per session.
       parsed.mode = "entry";
       parsed.currentParticipantId = null;
+      parsed.introStepIndex = 0;
       return parsed;
     }
   } catch (e) {
@@ -48,12 +50,33 @@ function reducer(state, action) {
       if (!id) return state;
       const participants = { ...state.participants };
       if (!participants[id]) participants[id] = blankParticipant(id);
+      const introCompleted = !!participants[id].introCompleted;
+      return {
+        ...state,
+        mode: introCompleted ? "participant" : "intro",
+        currentParticipantId: id,
+        currentStep: 2,
+        introStepIndex: 0,
+        participants,
+      };
+    }
+
+    case "SET_INTRO_STEP":
+      return { ...state, introStepIndex: action.index };
+
+    case "FINISH_INTRO": {
+      const pid = state.currentParticipantId;
+      if (!pid) return state;
+      const cur = state.participants[pid];
+      if (!cur) return state;
       return {
         ...state,
         mode: "participant",
-        currentParticipantId: id,
-        currentStep: 2,
-        participants,
+        introStepIndex: 0,
+        participants: {
+          ...state.participants,
+          [pid]: { ...cur, introCompleted: true },
+        },
       };
     }
 
@@ -61,7 +84,12 @@ function reducer(state, action) {
       return { ...state, mode: "admin", currentParticipantId: null };
 
     case "EXIT_TO_ENTRY":
-      return { ...state, mode: "entry", currentParticipantId: null };
+      return {
+        ...state,
+        mode: "entry",
+        currentParticipantId: null,
+        introStepIndex: 0,
+      };
 
     case "SYNC_REMOTE_PARTICIPANTS": {
       // Replace participants from Firestore but keep the current editor's local
