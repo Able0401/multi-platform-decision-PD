@@ -15,6 +15,7 @@ const initialState = {
   currentStep: 2,
   participants: {},
   customComponents: [],
+  customEmotions: [],
 };
 
 function loadInitial() {
@@ -22,8 +23,8 @@ function loadInitial() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Migrate older payloads that lack customComponents
       if (!Array.isArray(parsed.customComponents)) parsed.customComponents = [];
+      if (!Array.isArray(parsed.customEmotions)) parsed.customEmotions = [];
       return parsed;
     }
   } catch (e) {
@@ -209,6 +210,26 @@ function reducer(state, action) {
       return { ...state, customComponents, participants };
     }
 
+    // CUSTOM EMOTION actions (workshop-wide emotion catalog additions)
+    case "ADD_CUSTOM_EMOTION": {
+      // Avoid duplicates by id
+      if (state.customEmotions.some((e) => e.id === action.emotion.id)) {
+        return state;
+      }
+      return {
+        ...state,
+        customEmotions: [...state.customEmotions, action.emotion],
+      };
+    }
+    case "REMOVE_CUSTOM_EMOTION": {
+      return {
+        ...state,
+        customEmotions: state.customEmotions.filter(
+          (e) => e.id !== action.id
+        ),
+      };
+    }
+
     // STEP 4 actions (stickers placed by current voter on any participant's item)
     case "S4_ADD_STICKER": {
       const pid = state.currentParticipantId;
@@ -269,6 +290,11 @@ export function useStore() {
 export function useCustomComponents() {
   const { state } = useStore();
   return state.customComponents;
+}
+
+export function useCustomEmotions() {
+  const { state } = useStore();
+  return state.customEmotions;
 }
 
 export function useCurrentParticipant() {

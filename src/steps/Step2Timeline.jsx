@@ -1,5 +1,9 @@
-import { useRef } from "react";
-import { useStore, useCurrentParticipant } from "../state/store";
+import { useRef, useState } from "react";
+import {
+  useStore,
+  useCurrentParticipant,
+  useCustomEmotions,
+} from "../state/store";
 import { uid } from "../utils/id";
 import { downloadElementPNG } from "../utils/exportUtils";
 
@@ -28,9 +32,20 @@ const EMOTIONS = [
 export default function Step2Timeline() {
   const { dispatch } = useStore();
   const participant = useCurrentParticipant();
+  const customEmotions = useCustomEmotions();
   const railRef = useRef(null);
 
   const cards = participant?.step2.cards ?? [];
+
+  const allEmotions = [...EMOTIONS, ...customEmotions];
+
+  const handleAddEmotion = (emotion) => {
+    dispatch({ type: "ADD_CUSTOM_EMOTION", emotion });
+  };
+
+  const handleRemoveEmotion = (id) => {
+    dispatch({ type: "REMOVE_CUSTOM_EMOTION", id });
+  };
 
   const addCard = () => {
     dispatch({
@@ -114,9 +129,12 @@ export default function Step2Timeline() {
               index={i}
               total={cards.length}
               card={c}
+              emotions={allEmotions}
               onChange={(patch) => updateCard(c.id, patch)}
               onRemove={() => removeCard(c.id)}
               onMove={(dir) => moveCard(c.id, dir)}
+              onAddEmotion={handleAddEmotion}
+              onRemoveEmotion={handleRemoveEmotion}
             />
           ))}
           {cards.length > 0 && (
@@ -133,7 +151,17 @@ export default function Step2Timeline() {
   );
 }
 
-function Step2CardWithArrow({ index, total, card, onChange, onRemove, onMove }) {
+function Step2CardWithArrow({
+  index,
+  total,
+  card,
+  emotions,
+  onChange,
+  onRemove,
+  onMove,
+  onAddEmotion,
+  onRemoveEmotion,
+}) {
   const isLast = index === total - 1;
   return (
     <>
@@ -141,16 +169,29 @@ function Step2CardWithArrow({ index, total, card, onChange, onRemove, onMove }) 
         index={index}
         total={total}
         card={card}
+        emotions={emotions}
         onChange={onChange}
         onRemove={onRemove}
         onMove={onMove}
+        onAddEmotion={onAddEmotion}
+        onRemoveEmotion={onRemoveEmotion}
       />
       {!isLast && <Arrow reason={card.switchReason} />}
     </>
   );
 }
 
-function JourneyCard({ index, total, card, onChange, onRemove, onMove }) {
+function JourneyCard({
+  index,
+  total,
+  card,
+  emotions,
+  onChange,
+  onRemove,
+  onMove,
+  onAddEmotion,
+  onRemoveEmotion,
+}) {
   const isLast = index === total - 1;
   return (
     <div className="flex w-[260px] flex-shrink-0 flex-col gap-2 rounded-card border border-ink-100 bg-white p-3 shadow-card">
@@ -193,7 +234,7 @@ function JourneyCard({ index, total, card, onChange, onRemove, onMove }) {
         <input
           className="input"
           list="app-suggestions"
-          placeholder="e.g. Instagram"
+          placeholder="Type any app or pick from list (직접 입력 가능)"
           value={card.app}
           onChange={(e) => onChange({ app: e.target.value })}
         />
@@ -218,33 +259,13 @@ function JourneyCard({ index, total, card, onChange, onRemove, onMove }) {
       </div>
 
       {/* Emotion */}
-      <div>
-        <div className="label-bi-sub mb-1">
-          Emotion <span className="text-ink-300">감정</span>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {EMOTIONS.map((e) => {
-            const active = card.emotion === e.id;
-            return (
-              <button
-                key={e.id}
-                onClick={() =>
-                  onChange({ emotion: active ? "" : e.id })
-                }
-                className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] transition ${
-                  active
-                    ? "border-ink-900 bg-ink-900 text-white"
-                    : "border-ink-100 bg-white text-ink-700 hover:border-ink-300"
-                }`}
-                title={`${e.en} (${e.ko})`}
-              >
-                <span className="text-[12px] leading-none">{e.emoji}</span>
-                {e.ko}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <EmotionPicker
+        emotions={emotions}
+        value={card.emotion}
+        onChange={(emotion) => onChange({ emotion })}
+        onAddEmotion={onAddEmotion}
+        onRemoveEmotion={onRemoveEmotion}
+      />
 
       {/* Switch reason */}
       <div>
@@ -269,6 +290,124 @@ function JourneyCard({ index, total, card, onChange, onRemove, onMove }) {
           value={card.switchReason}
           onChange={(e) => onChange({ switchReason: e.target.value })}
         />
+      </div>
+    </div>
+  );
+}
+
+function EmotionPicker({
+  emotions,
+  value,
+  onChange,
+  onAddEmotion,
+  onRemoveEmotion,
+}) {
+  const [adding, setAdding] = useState(false);
+  const [emoji, setEmoji] = useState("✨");
+  const [labelKo, setLabelKo] = useState("");
+
+  const builtInIds = new Set(EMOTIONS.map((e) => e.id));
+
+  const submit = () => {
+    const ko = labelKo.trim();
+    if (!ko) return;
+    const id = `custom_emotion_${ko}`;
+    onAddEmotion?.({
+      id,
+      emoji: emoji.trim() || "✨",
+      en: ko,
+      ko,
+    });
+    onChange?.(id);
+    setAdding(false);
+    setLabelKo("");
+    setEmoji("✨");
+  };
+
+  return (
+    <div>
+      <div className="label-bi-sub mb-1">
+        Emotion <span className="text-ink-300">감정</span>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {emotions.map((e) => {
+          const active = value === e.id;
+          const isCustom = !builtInIds.has(e.id);
+          return (
+            <span key={e.id} className="group/emo relative inline-flex">
+              <button
+                onClick={() => onChange(active ? "" : e.id)}
+                className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] transition ${
+                  active
+                    ? "border-ink-900 bg-ink-900 text-white"
+                    : "border-ink-100 bg-white text-ink-700 hover:border-ink-300"
+                }`}
+                title={`${e.en} (${e.ko})`}
+              >
+                <span className="text-[12px] leading-none">{e.emoji}</span>
+                {e.ko}
+              </button>
+              {isCustom && (
+                <button
+                  onClick={() => onRemoveEmotion?.(e.id)}
+                  className={`absolute -right-1 -top-1 hidden h-3.5 w-3.5 items-center justify-center rounded-full border border-ink-100 bg-white text-[8px] text-ink-500 group-hover/emo:flex hover:text-ink-900`}
+                  title="Remove custom emotion (감정 삭제)"
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          );
+        })}
+        {!adding ? (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1 rounded-full border border-dashed border-ink-100 px-1.5 py-0.5 text-[10px] text-ink-500 hover:border-accent hover:text-accent"
+            title="Add custom emotion (감정 추가)"
+          >
+            + 감정 추가
+          </button>
+        ) : (
+          <div className="mt-1 flex w-full items-center gap-1 rounded-md border border-ink-100 bg-ink-50/50 p-1">
+            <input
+              className="w-7 rounded border border-ink-100 bg-white px-1 py-0.5 text-center text-[12px] outline-none focus:border-accent"
+              value={emoji}
+              maxLength={3}
+              onChange={(ev) => setEmoji(ev.target.value)}
+              title="Emoji"
+            />
+            <input
+              autoFocus
+              className="flex-1 rounded border border-ink-100 bg-white px-1.5 py-0.5 text-[10px] outline-none focus:border-accent"
+              placeholder="감정 (e.g. 짜증)"
+              value={labelKo}
+              onChange={(ev) => setLabelKo(ev.target.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === "Enter") submit();
+                if (ev.key === "Escape") {
+                  setAdding(false);
+                  setLabelKo("");
+                }
+              }}
+            />
+            <button
+              className="rounded bg-ink-900 px-1.5 py-0.5 text-[10px] text-white disabled:opacity-30"
+              onClick={submit}
+              disabled={!labelKo.trim()}
+            >
+              ✓
+            </button>
+            <button
+              className="rounded px-1 py-0.5 text-[10px] text-ink-500 hover:text-ink-900"
+              onClick={() => {
+                setAdding(false);
+                setLabelKo("");
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

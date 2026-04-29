@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -22,9 +22,11 @@ import ComponentCard from "../kit/ComponentCard";
 import { uid } from "../utils/id";
 import { downloadElementPNG } from "../utils/exportUtils";
 
-const CANVAS_WIDTH = 360;
-const CANVAS_HEIGHT = 720;
-const DEFAULT_ITEM_WIDTH = 240;
+const CANVAS_WIDTH = 440;
+const CANVAS_HEIGHT = 880;
+const FALLBACK_WIDTH = 240;
+const MIN_ITEM_WIDTH = 120;
+const MAX_ITEM_WIDTH = CANVAS_WIDTH - 16;
 
 export default function Step3Canvas() {
   const { dispatch } = useStore();
@@ -62,7 +64,6 @@ export default function Step3Canvas() {
     const data = active.data.current;
     if (!data) return;
 
-    // Drop on canvas?
     const droppedOnCanvas = over?.id === "canvas";
 
     if (data.type === "palette-item") {
@@ -70,19 +71,11 @@ export default function Step3Canvas() {
       const canvasRect = canvasRef.current.getBoundingClientRect();
       const dragRect = active.rect.current.translated;
       if (!dragRect) return;
-      const x = Math.max(
-        0,
-        Math.min(
-          CANVAS_WIDTH - DEFAULT_ITEM_WIDTH,
-          dragRect.left - canvasRect.left
-        )
-      );
-      const y = Math.max(
-        0,
-        Math.min(CANVAS_HEIGHT - 60, dragRect.top - canvasRect.top)
-      );
       const def = findComponent(data.componentId, customs);
       if (!def) return;
+      const w = def.defaultWidth ?? FALLBACK_WIDTH;
+      const x = clamp(dragRect.left - canvasRect.left, 0, CANVAS_WIDTH - w);
+      const y = clamp(dragRect.top - canvasRect.top, 0, CANVAS_HEIGHT - 60);
       dispatch({
         type: "S3_ADD_ITEM",
         item: {
@@ -91,6 +84,7 @@ export default function Step3Canvas() {
           text: def.defaultText,
           x,
           y,
+          w,
           z: items.length + 1,
         },
       });
@@ -100,14 +94,9 @@ export default function Step3Canvas() {
     if (data.type === "canvas-item") {
       const it = items.find((x) => x.id === data.id);
       if (!it) return;
-      const newX = Math.max(
-        0,
-        Math.min(CANVAS_WIDTH - DEFAULT_ITEM_WIDTH, it.x + delta.x)
-      );
-      const newY = Math.max(
-        0,
-        Math.min(CANVAS_HEIGHT - 60, it.y + delta.y)
-      );
+      const w = it.w ?? FALLBACK_WIDTH;
+      const newX = clamp(it.x + delta.x, 0, CANVAS_WIDTH - w);
+      const newY = clamp(it.y + delta.y, 0, CANVAS_HEIGHT - 60);
       dispatch({
         type: "S3_UPDATE_ITEM",
         id: it.id,
@@ -197,13 +186,16 @@ export default function Step3Canvas() {
 
         {/* CANVAS */}
         <section className="flex flex-col items-center justify-start overflow-auto py-4">
-          <div className="mb-3 flex w-full max-w-[460px] items-center justify-between gap-2">
+          <div
+            className="mb-3 flex items-center justify-between gap-2"
+            style={{ width: CANVAS_WIDTH + 24 }}
+          >
             <div>
               <div className="text-[13px] font-semibold text-ink-900">
                 Ideal Screen Canvas
               </div>
               <div className="text-[11px] text-ink-500">
-                이상적인 화면 — 드래그해서 배치하고, 더블클릭으로 수정
+                이상적인 화면 — 드래그해서 배치, 더블클릭으로 수정, 우하단 모서리로 크기 조절
               </div>
             </div>
             <div className="flex gap-1">
@@ -241,6 +233,13 @@ export default function Step3Canvas() {
                       patch: { text },
                     })
                   }
+                  onResizeCommit={(w) =>
+                    dispatch({
+                      type: "S3_UPDATE_ITEM",
+                      id: it.id,
+                      patch: { w },
+                    })
+                  }
                   onRemove={() =>
                     dispatch({ type: "S3_REMOVE_ITEM", id: it.id })
                   }
@@ -258,12 +257,18 @@ export default function Step3Canvas() {
             </CanvasDroppable>
           </div>
         </section>
-
       </div>
 
       <DragOverlay dropAnimation={null}>
         {activeDrag?.type === "palette-item" && (
-          <div style={{ width: DEFAULT_ITEM_WIDTH, opacity: 0.9 }}>
+          <div
+            style={{
+              width:
+                findComponent(activeDrag.componentId, customs)?.defaultWidth ??
+                FALLBACK_WIDTH,
+              opacity: 0.9,
+            }}
+          >
             <ComponentCard
               componentId={activeDrag.componentId}
               variant="canvas"
@@ -273,6 +278,10 @@ export default function Step3Canvas() {
       </DragOverlay>
     </DndContext>
   );
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
 }
 
 function PaletteDraggable({ componentId, removable, onRemove }) {
@@ -325,6 +334,7 @@ function CreateComponentForm({ onCreate }) {
       labelKo: labelKo.trim() || en,
       group: "custom",
       defaultText: defaultText.trim(),
+      defaultWidth: 240,
     });
     reset();
   };
@@ -402,6 +412,7 @@ function CanvasItem({
   onStartEdit,
   onEndEdit,
   onTextChange,
+  onResizeCommit,
   onRemove,
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
@@ -411,23 +422,58 @@ function CanvasItem({
       disabled: editing,
     });
 
+  const baseW = item.w ?? FALLBACK_WIDTH;
+  const [draftW, setDraftW] = useState(null); // null when not actively resizing
+  const isResizing = draftW != null;
+  const displayedW = draftW ?? baseW;
+
+  const handleResizePointerDown = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = baseW;
+    let lastW = startW;
+
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const maxAllowed = Math.min(MAX_ITEM_WIDTH, CANVAS_WIDTH - item.x);
+      lastW = clamp(startW + dx, MIN_ITEM_WIDTH, maxAllowed);
+      setDraftW(lastW);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      onResizeCommit?.(lastW);
+      setDraftW(null);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Cleanup safety: if the component unmounts mid-resize, drop our listeners.
+  useEffect(() => {
+    return () => setDraftW(null);
+  }, []);
+
   const style = {
     position: "absolute",
     left: item.x,
     top: item.y,
-    width: DEFAULT_ITEM_WIDTH,
-    transform: transform
-      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-      : undefined,
-    zIndex: isDragging ? 50 : (item.z ?? 1),
+    width: displayedW,
+    transform:
+      transform && !isResizing
+        ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+        : undefined,
+    zIndex: isDragging || isResizing ? 50 : item.z ?? 1,
   };
 
   return (
     <div ref={setNodeRef} style={style} className="group">
       <div
-        {...(!editing ? listeners : {})}
-        {...(!editing ? attributes : {})}
-        style={{ cursor: editing ? "text" : "grab" }}
+        {...(!editing && !isResizing ? listeners : {})}
+        {...(!editing && !isResizing ? attributes : {})}
+        style={{ cursor: editing ? "text" : isResizing ? "ew-resize" : "grab" }}
       >
         <ComponentCard
           componentId={item.componentId}
@@ -439,14 +485,34 @@ function CanvasItem({
           onTextChange={onTextChange}
         />
       </div>
+
+      {/* Resize handle (bottom-right corner) */}
+      {!editing && (
+        <div
+          onPointerDown={handleResizePointerDown}
+          className="absolute -bottom-1 -right-1 hidden h-4 w-4 cursor-ew-resize items-center justify-center rounded-sm border border-ink-100 bg-white text-[9px] text-ink-500 shadow-card group-hover:flex hover:text-ink-900"
+          title="Drag to resize width (가로 크기 조절)"
+        >
+          ↔
+        </div>
+      )}
+
       {!editing && (
         <button
           className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full border border-ink-100 bg-white text-[12px] text-ink-500 shadow-card group-hover:flex hover:text-ink-900"
           onClick={onRemove}
+          onPointerDown={(e) => e.stopPropagation()}
           title="Delete (삭제)"
         >
           ×
         </button>
+      )}
+
+      {/* Width indicator while resizing */}
+      {isResizing && (
+        <div className="pointer-events-none absolute -bottom-5 right-0 rounded bg-ink-900 px-1.5 py-0.5 text-[10px] tabular-nums text-white">
+          {Math.round(displayedW)}px
+        </div>
       )}
     </div>
   );

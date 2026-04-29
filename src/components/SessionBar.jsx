@@ -125,7 +125,7 @@ export default function SessionBar() {
                 }`}
               >
                 <div className="text-[12px] font-semibold leading-tight">
-                  Step {s.id} · {s.label}
+                  {s.label}
                 </div>
                 <div
                   className={`text-[10px] leading-tight ${active ? "text-white/70" : "text-ink-500"}`}
