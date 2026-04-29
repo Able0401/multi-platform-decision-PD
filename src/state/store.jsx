@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useReducer } from "react";
+import { useFirebaseSync } from "./firebaseSync";
 
 const STORAGE_KEY = "mpdt_session_v1";
 
@@ -11,6 +12,7 @@ const blankParticipant = (id) => ({
 });
 
 const initialState = {
+  mode: "entry", // "entry" | "participant" | "admin"
   currentParticipantId: null,
   currentStep: 2,
   participants: {},
@@ -25,6 +27,9 @@ function loadInitial() {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.customComponents)) parsed.customComponents = [];
       if (!Array.isArray(parsed.customEmotions)) parsed.customEmotions = [];
+      // Always boot to the entry screen — name re-entry is intentional per session.
+      parsed.mode = "entry";
+      parsed.currentParticipantId = null;
       return parsed;
     }
   } catch (e) {
@@ -43,7 +48,38 @@ function reducer(state, action) {
       if (!id) return state;
       const participants = { ...state.participants };
       if (!participants[id]) participants[id] = blankParticipant(id);
-      return { ...state, currentParticipantId: id, currentStep: 2, participants };
+      return {
+        ...state,
+        mode: "participant",
+        currentParticipantId: id,
+        currentStep: 2,
+        participants,
+      };
+    }
+
+    case "ENTER_ADMIN":
+      return { ...state, mode: "admin", currentParticipantId: null };
+
+    case "EXIT_TO_ENTRY":
+      return { ...state, mode: "entry", currentParticipantId: null };
+
+    case "SYNC_REMOTE_PARTICIPANTS": {
+      // Replace participants from Firestore but keep the current editor's local
+      // copy untouched to avoid round-trip flicker on their own edits.
+      const merged = { ...action.participants };
+      const cid = state.currentParticipantId;
+      if (cid && state.participants[cid]) {
+        merged[cid] = state.participants[cid];
+      }
+      return { ...state, participants: merged };
+    }
+
+    case "SYNC_REMOTE_GLOBALS": {
+      return {
+        ...state,
+        customComponents: action.customComponents ?? state.customComponents,
+        customEmotions: action.customEmotions ?? state.customEmotions,
+      };
     }
 
     case "SELECT_PARTICIPANT":
@@ -273,6 +309,9 @@ export function StoreProvider({ children }) {
       console.warn("failed to persist state", e);
     }
   }, [state]);
+
+  // Bidirectional sync with Firestore (listen + debounced writes)
+  useFirebaseSync(state, dispatch);
 
   return (
     <StoreContext.Provider value={{ state, dispatch }}>
