@@ -2,9 +2,9 @@ import { useStore } from "../state/store";
 import { downloadJSON } from "../utils/exportUtils";
 
 const STEPS = [
-  { id: 2, label: "Journey", subLabel: "여정 재구성", time: "20m" },
-  { id: 3, label: "Canvas", subLabel: "컴포넌트 조합", time: "30m" },
-  { id: 4, label: "Compare", subLabel: "비교·투표", time: "15m" },
+  { id: 2, label: "Journey", subLabel: "여정 재구성" },
+  { id: 3, label: "Canvas", subLabel: "컴포넌트 조합" },
+  { id: 4, label: "Compare", subLabel: "비교·투표" },
 ];
 
 export default function SessionBar() {
@@ -82,7 +82,7 @@ export default function SessionBar() {
                 <div
                   className={`text-[10px] leading-tight ${active ? "text-white/70" : "text-ink-500"}`}
                 >
-                  {s.subLabel} · {s.time}
+                  {s.subLabel}
                 </div>
               </button>
             );

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useStore } from "../state/store";
 import ComponentCard from "../kit/ComponentCard";
 import { downloadJSON } from "../utils/exportUtils";
+import { CANVAS_STICKER_TARGET } from "../steps/Step4Compare";
 
 export default function AdminView() {
   const { state, dispatch } = useStore();
@@ -82,9 +83,14 @@ export default function AdminView() {
               const stickersGiven = p.step4?.stickers?.length ?? 0;
               const stickersReceived = Object.entries(stickerRollup).reduce(
                 (n, [key, c]) =>
-                  key.startsWith(`${pid}:`) ? n + c : n,
+                  key.startsWith(`${pid}:`) &&
+                  !key.endsWith(`:${CANVAS_STICKER_TARGET}`)
+                    ? n + c
+                    : n,
                 0
               );
+              const overallStickers =
+                stickerRollup[`${pid}:${CANVAS_STICKER_TARGET}`] ?? 0;
               const active = selected === pid;
               return (
                 <button
@@ -109,6 +115,7 @@ export default function AdminView() {
                     <Stat label="items" value={items} />
                     <Stat label="given" value={stickersGiven} />
                     <Stat label="★" value={stickersReceived} highlight />
+                    <Stat label="UI ★" value={overallStickers} highlight />
                   </div>
                 </button>
               );
@@ -151,16 +158,28 @@ function Stat({ label, value, highlight }) {
 function ParticipantDetail({ participant, stickerRollup }) {
   const cards = participant.step2?.cards ?? [];
   const items = participant.step3?.items ?? [];
+  const overallStickers =
+    stickerRollup[`${participant.id}:${CANVAS_STICKER_TARGET}`] ?? 0;
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="text-[15px] font-semibold text-ink-900">
-          {participant.id}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[15px] font-semibold text-ink-900">
+            {participant.id}
+          </div>
+          <div className="text-[11px] text-ink-500">
+            Started {participant.startedAt ? new Date(participant.startedAt).toLocaleString() : "—"}
+          </div>
         </div>
-        <div className="text-[11px] text-ink-500">
-          Started {participant.startedAt ? new Date(participant.startedAt).toLocaleString() : "—"}
-        </div>
+        {overallStickers > 0 && (
+          <div className="flex items-center gap-1 rounded-full bg-sticker/40 px-3 py-1 text-[12px] font-semibold text-ink-900">
+            ★ {overallStickers} for the whole UI
+            <span className="text-[10px] font-normal text-ink-700">
+              (전체 UI)
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Journey */}

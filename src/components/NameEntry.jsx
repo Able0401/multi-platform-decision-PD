@@ -55,13 +55,6 @@ export default function NameEntry() {
           </button>
         </div>
 
-        <div className="mt-6 text-[11px] leading-relaxed text-ink-300">
-          Type <span className="font-mono text-ink-500">admin</span> to view
-          all participants.
-          <br />
-          <span className="font-mono text-ink-500">admin</span>을 입력하면 모든
-          참여자를 볼 수 있어요.
-        </div>
       </form>
     </div>
   );
