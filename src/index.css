@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f7f8fa;
+  color: #111418;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Pretendard", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+}
+
+@layer components {
+  .label-bi {
+    @apply text-[13px] leading-tight text-ink-700;
+  }
+  .label-bi-sub {
+    @apply text-[11px] leading-tight text-ink-500;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] font-medium transition;
+  }
+  .btn-primary {
+    @apply btn bg-ink-900 text-white hover:bg-ink-700;
+  }
+  .btn-ghost {
+    @apply btn bg-white text-ink-700 border border-ink-100 hover:border-ink-300;
+  }
+  .btn-soft {
+    @apply btn bg-accent-soft text-accent hover:bg-accent hover:text-white;
+  }
+  .input {
+    @apply w-full rounded-md border border-ink-100 bg-white px-2.5 py-1.5 text-[13px] text-ink-900 outline-none focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+  .card {
+    @apply rounded-card bg-white shadow-card;
+  }
+}
