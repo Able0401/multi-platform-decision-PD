@@ -16,6 +16,7 @@ import {
 import {
   COMPONENT_CATALOG,
   GROUP_LABELS,
+  GROUP_COLORS,
   findComponent,
 } from "../kit/catalog";
 import ComponentCard from "../kit/ComponentCard";
@@ -25,6 +26,7 @@ import { downloadElementPNG } from "../utils/exportUtils";
 const CANVAS_WIDTH = 440;
 const CANVAS_HEIGHT = 880;
 const FALLBACK_WIDTH = 240;
+const FALLBACK_HEIGHT = 72;
 const MIN_ITEM_WIDTH = 120;
 const MAX_ITEM_WIDTH = CANVAS_WIDTH - 16;
 
@@ -128,14 +130,14 @@ export default function Step3Canvas() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="grid h-full grid-cols-[300px_1fr] gap-4 p-4">
+      <div className="grid h-full grid-cols-[320px_1fr] gap-4 p-4">
         {/* PALETTE */}
         <aside className="card flex flex-col overflow-hidden">
           <div className="border-b border-ink-100 px-3 py-2.5">
             <div className="text-[13px] font-semibold text-ink-900">
               Component Kit
             </div>
-            <div className="text-[11px] text-ink-500">컴포넌트 키트</div>
+            <div className="text-[11px] text-ink-500">컴포넌트 키트 — 드래그하여 캔버스에 추가</div>
           </div>
           <div className="border-b border-ink-100 p-3">
             <CreateComponentForm
@@ -144,43 +146,71 @@ export default function Step3Canvas() {
               }
             />
           </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-4">
-            {Object.entries(grouped).map(([groupId, comps]) => (
-              <div key={groupId}>
-                <div className="mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-300">
-                  {GROUP_LABELS[groupId]?.en ?? groupId}{" "}
-                  <span className="text-ink-300/70 normal-case">
-                    {GROUP_LABELS[groupId]?.ko ?? ""}
-                  </span>
+          <div className="flex-1 overflow-y-auto p-3 space-y-5">
+            {Object.entries(grouped).map(([groupId, comps]) => {
+              const grpColor = GROUP_COLORS[groupId] ?? GROUP_COLORS.custom;
+              const grpLabel = GROUP_LABELS[groupId];
+              return (
+                <div key={groupId}>
+                  {/* Group header */}
+                  <div
+                    className="mb-2 flex items-center gap-1.5 rounded-md px-2 py-1"
+                    style={{ background: grpColor.bg }}
+                  >
+                    <span className="text-[12px]">{grpLabel?.icon ?? "📦"}</span>
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-wider"
+                      style={{ color: grpColor.accent }}
+                    >
+                      {grpLabel?.en ?? groupId}
+                    </span>
+                    <span className="text-[10px] text-ink-400">
+                      {grpLabel?.ko ?? ""}
+                    </span>
+                  </div>
+
+                  {/* Widget grid: 2 columns, items span 1 or 2 cols */}
+                  <div
+                    className="grid gap-2"
+                    style={{
+                      gridTemplateColumns: "1fr 1fr",
+                    }}
+                  >
+                    {comps.map((c) => {
+                      const isCustom = !COMPONENT_CATALOG.some(
+                        (x) => x.id === c.id
+                      );
+                      const span = c.colSpan ?? 1;
+                      return (
+                        <div
+                          key={c.id}
+                          style={{
+                            gridColumn: span === 2 ? "1 / -1" : "auto",
+                          }}
+                        >
+                          <PaletteDraggable
+                            componentId={c.id}
+                            removable={isCustom}
+                            onRemove={() => {
+                              if (
+                                window.confirm(
+                                  "Remove this custom component? Items on canvases using it will be removed too. (이 컴포넌트를 삭제하시겠어요? 캔버스에 올린 항목도 함께 삭제됩니다.)"
+                                )
+                              ) {
+                                dispatch({
+                                  type: "REMOVE_CUSTOM_COMPONENT",
+                                  id: c.id,
+                                });
+                              }
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {comps.map((c) => {
-                    const isCustom = !COMPONENT_CATALOG.some(
-                      (x) => x.id === c.id
-                    );
-                    return (
-                      <PaletteDraggable
-                        key={c.id}
-                        componentId={c.id}
-                        removable={isCustom}
-                        onRemove={() => {
-                          if (
-                            window.confirm(
-                              "Remove this custom component? Items on canvases using it will be removed too. (이 컴포넌트를 삭제하시겠어요? 캔버스에 올린 항목도 함께 삭제됩니다.)"
-                            )
-                          ) {
-                            dispatch({
-                              type: "REMOVE_CUSTOM_COMPONENT",
-                              id: c.id,
-                            });
-                          }
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </aside>
 
@@ -247,10 +277,13 @@ export default function Step3Canvas() {
               ))}
               {items.length === 0 && (
                 <div className="absolute inset-0 grid place-items-center text-center">
-                  <div className="text-[12px] text-ink-300">
-                    Drag components here
-                    <br />
-                    여기로 드래그
+                  <div>
+                    <div className="text-[28px] mb-2 opacity-30">📱</div>
+                    <div className="text-[12px] text-ink-300">
+                      Drag components here
+                      <br />
+                      여기로 드래그
+                    </div>
                   </div>
                 </div>
               )}
@@ -333,8 +366,12 @@ function CreateComponentForm({ onCreate }) {
       label: en,
       labelKo: labelKo.trim() || en,
       group: "custom",
+      icon: "✏️",
       defaultText: defaultText.trim(),
       defaultWidth: 240,
+      defaultHeight: 80,
+      colSpan: 2,
+      rowSpan: 1,
     });
     reset();
   };
