@@ -6,9 +6,9 @@ const STORAGE_KEY = "mpdt_session_v1";
 const blankParticipant = (id) => ({
   id,
   startedAt: new Date().toISOString(),
-  step2: { cards: [] },
+  step2: { cards: [], memos: [] },
   step3: { items: [] },
-  step4: { stickers: [] },
+  step4: { discussions: [] },
 });
 
 const initialState = {
@@ -28,6 +28,16 @@ function loadInitial() {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.customComponents)) parsed.customComponents = [];
       if (!Array.isArray(parsed.customEmotions)) parsed.customEmotions = [];
+      // Ensure all participants have the new memos & discussions fields
+      for (const pid of Object.keys(parsed.participants ?? {})) {
+        const p = parsed.participants[pid];
+        if (!p.step2) p.step2 = { cards: [], memos: [] };
+        if (!Array.isArray(p.step2.memos)) p.step2.memos = [];
+        if (!p.step4) p.step4 = { discussions: [] };
+        if (!Array.isArray(p.step4.discussions)) p.step4.discussions = [];
+        // Remove legacy stickers field
+        delete p.step4.stickers;
+      }
       // Always boot to the entry screen — name re-entry is intentional per session.
       parsed.mode = "entry";
       parsed.currentParticipantId = null;
@@ -50,6 +60,20 @@ function reducer(state, action) {
       if (!id) return state;
       const participants = { ...state.participants };
       if (!participants[id]) participants[id] = blankParticipant(id);
+      // Ensure memos array exists for existing participants
+      if (!Array.isArray(participants[id].step2?.memos)) {
+        participants[id] = {
+          ...participants[id],
+          step2: { ...participants[id].step2, memos: [] },
+        };
+      }
+      // Ensure discussions array exists for existing participants
+      if (!Array.isArray(participants[id].step4?.discussions)) {
+        participants[id] = {
+          ...participants[id],
+          step4: { ...participants[id].step4, discussions: [] },
+        };
+      }
       const introCompleted = !!participants[id].introCompleted;
       return {
         ...state,
@@ -98,6 +122,15 @@ function reducer(state, action) {
       const cid = state.currentParticipantId;
       if (cid && state.participants[cid]) {
         merged[cid] = state.participants[cid];
+      }
+      // Ensure all participants have memos & discussions
+      for (const pid of Object.keys(merged)) {
+        const p = merged[pid];
+        if (!p.step2) p.step2 = { cards: [], memos: [] };
+        if (!Array.isArray(p.step2.memos)) p.step2 = { ...p.step2, memos: [] };
+        if (!p.step4) p.step4 = { discussions: [] };
+        if (!Array.isArray(p.step4.discussions))
+          p.step4 = { ...p.step4, discussions: [] };
       }
       return { ...state, participants: merged };
     }
@@ -199,6 +232,51 @@ function reducer(state, action) {
       };
     }
 
+    // STEP 2 MEMO actions
+    case "S2_ADD_MEMO": {
+      const pid = state.currentParticipantId;
+      if (!pid) return state;
+      const cur = state.participants[pid];
+      const memos = [...(cur.step2.memos ?? []), action.memo];
+      return {
+        ...state,
+        participants: {
+          ...state.participants,
+          [pid]: { ...cur, step2: { ...cur.step2, memos } },
+        },
+      };
+    }
+    case "S2_UPDATE_MEMO": {
+      const pid = state.currentParticipantId;
+      if (!pid) return state;
+      const cur = state.participants[pid];
+      const memos = (cur.step2.memos ?? []).map((m) =>
+        m.id === action.id ? { ...m, ...action.patch } : m
+      );
+      return {
+        ...state,
+        participants: {
+          ...state.participants,
+          [pid]: { ...cur, step2: { ...cur.step2, memos } },
+        },
+      };
+    }
+    case "S2_REMOVE_MEMO": {
+      const pid = state.currentParticipantId;
+      if (!pid) return state;
+      const cur = state.participants[pid];
+      const memos = (cur.step2.memos ?? []).filter(
+        (m) => m.id !== action.id
+      );
+      return {
+        ...state,
+        participants: {
+          ...state.participants,
+          [pid]: { ...cur, step2: { ...cur.step2, memos } },
+        },
+      };
+    }
+
     // STEP 3 actions
     case "S3_ADD_ITEM": {
       const pid = state.currentParticipantId;
@@ -251,24 +329,13 @@ function reducer(state, action) {
       const customComponents = state.customComponents.filter(
         (c) => c.id !== cid
       );
-      // First pass: collect orphaned item ids across every canvas
-      const orphaned = new Set();
-      for (const p of Object.values(state.participants)) {
-        for (const it of p.step3.items) {
-          if (it.componentId === cid) orphaned.add(it.id);
-        }
-      }
-      // Second pass: drop those items + any sticker (any voter) targeting them
+      // First pass: drop orphaned items across every canvas
       const participants = {};
       for (const [pid, p] of Object.entries(state.participants)) {
         const items = p.step3.items.filter((it) => it.componentId !== cid);
-        const stickers = p.step4.stickers.filter(
-          (s) => !orphaned.has(s.targetItemId)
-        );
         participants[pid] = {
           ...p,
           step3: { ...p.step3, items },
-          step4: { ...p.step4, stickers },
         };
       }
       return { ...state, customComponents, participants };
@@ -294,28 +361,35 @@ function reducer(state, action) {
       };
     }
 
-    // STEP 4 actions (stickers placed by current voter on any participant's item)
-    case "S4_ADD_STICKER": {
+    // STEP 4 Discussion actions
+    case "S4_ADD_DISCUSSION": {
       const pid = state.currentParticipantId;
+      if (!pid) return state;
       const cur = state.participants[pid];
-      const stickers = [...cur.step4.stickers, action.sticker];
+      const discussions = [
+        ...(cur.step4?.discussions ?? []),
+        action.discussion,
+      ];
       return {
         ...state,
         participants: {
           ...state.participants,
-          [pid]: { ...cur, step4: { ...cur.step4, stickers } },
+          [pid]: { ...cur, step4: { ...cur.step4, discussions } },
         },
       };
     }
-    case "S4_REMOVE_STICKER": {
+    case "S4_REMOVE_DISCUSSION": {
       const pid = state.currentParticipantId;
+      if (!pid) return state;
       const cur = state.participants[pid];
-      const stickers = cur.step4.stickers.filter((s) => s.id !== action.id);
+      const discussions = (cur.step4?.discussions ?? []).filter(
+        (d) => d.id !== action.id
+      );
       return {
         ...state,
         participants: {
           ...state.participants,
-          [pid]: { ...cur, step4: { ...cur.step4, stickers } },
+          [pid]: { ...cur, step4: { ...cur.step4, discussions } },
         },
       };
     }

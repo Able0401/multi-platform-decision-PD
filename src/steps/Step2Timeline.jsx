@@ -29,6 +29,14 @@ const EMOTIONS = [
   { id: "confident", emoji: "🙌", en: "Confident", ko: "확신" },
 ];
 
+const MEMO_COLORS = [
+  { id: "yellow", bg: "bg-yellow-100", border: "border-yellow-300", text: "text-yellow-900" },
+  { id: "blue", bg: "bg-blue-100", border: "border-blue-300", text: "text-blue-900" },
+  { id: "green", bg: "bg-green-100", border: "border-green-300", text: "text-green-900" },
+  { id: "pink", bg: "bg-pink-100", border: "border-pink-300", text: "text-pink-900" },
+  { id: "purple", bg: "bg-purple-100", border: "border-purple-300", text: "text-purple-900" },
+];
+
 export default function Step2Timeline() {
   const { dispatch } = useStore();
   const participant = useCurrentParticipant();
@@ -36,6 +44,7 @@ export default function Step2Timeline() {
   const railRef = useRef(null);
 
   const cards = participant?.step2.cards ?? [];
+  const memos = participant?.step2.memos ?? [];
 
   const allEmotions = [...EMOTIONS, ...customEmotions];
 
@@ -63,6 +72,24 @@ export default function Step2Timeline() {
         railRef.current.scrollLeft = railRef.current.scrollWidth;
     });
   };
+
+  const addMemo = () => {
+    const colorIdx = memos.length % MEMO_COLORS.length;
+    dispatch({
+      type: "S2_ADD_MEMO",
+      memo: {
+        id: uid("memo"),
+        text: "",
+        color: MEMO_COLORS[colorIdx].id,
+        createdAt: new Date().toISOString(),
+      },
+    });
+  };
+
+  const updateMemo = (id, patch) =>
+    dispatch({ type: "S2_UPDATE_MEMO", id, patch });
+
+  const removeMemo = (id) => dispatch({ type: "S2_REMOVE_MEMO", id });
 
   const updateCard = (id, patch) =>
     dispatch({ type: "S2_UPDATE_CARD", id, patch });
@@ -104,6 +131,12 @@ export default function Step2Timeline() {
             <button className="btn-ghost" onClick={handleExportPNG}>
               Save PNG
             </button>
+            <button
+              className="rounded-md border border-dashed border-yellow-400 bg-yellow-50 px-3 py-1.5 text-[12px] font-medium text-yellow-800 hover:bg-yellow-100 transition"
+              onClick={addMemo}
+            >
+              📝 메모 추가
+            </button>
             <button className="btn-primary" onClick={addCard}>
               + Add app card (앱 카드 추가)
             </button>
@@ -114,7 +147,7 @@ export default function Step2Timeline() {
           ref={railRef}
           className="flex flex-1 items-stretch gap-2 overflow-x-auto rounded-card border border-ink-100 bg-white p-4"
         >
-          {cards.length === 0 && (
+          {cards.length === 0 && memos.length === 0 && (
             <div className="m-auto text-center text-[13px] text-ink-300">
               Click <span className="font-semibold text-ink-700">+ Add app card</span> to start.
               <br />
@@ -146,7 +179,77 @@ export default function Step2Timeline() {
             </button>
           )}
         </div>
+
+        {/* Memos section */}
+        {memos.length > 0 && (
+          <div className="mt-3">
+            <div className="mb-1.5 text-[11px] font-semibold text-ink-500 uppercase tracking-wider">
+              📝 Memos (메모)
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {memos.map((memo) => (
+                <MemoCard
+                  key={memo.id}
+                  memo={memo}
+                  onChange={(patch) => updateMemo(memo.id, patch)}
+                  onRemove={() => removeMemo(memo.id)}
+                />
+              ))}
+              <button
+                className="grid w-[140px] h-[100px] place-items-center rounded-lg border-2 border-dashed border-ink-100 text-[11px] text-ink-300 hover:border-ink-300 hover:text-ink-700 transition"
+                onClick={addMemo}
+              >
+                + 메모 추가
+              </button>
+            </div>
+          </div>
+        )}
       </section>
+    </div>
+  );
+}
+
+function MemoCard({ memo, onChange, onRemove }) {
+  const colorDef = MEMO_COLORS.find((c) => c.id === memo.color) ?? MEMO_COLORS[0];
+
+  return (
+    <div
+      className={`group/memo relative flex w-[200px] flex-col rounded-lg border ${colorDef.border} ${colorDef.bg} p-2.5 shadow-sm transition hover:shadow-md`}
+    >
+      {/* Color picker */}
+      <div className="flex items-center justify-between gap-1 mb-1.5">
+        <div className="flex gap-0.5">
+          {MEMO_COLORS.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => onChange({ color: c.id })}
+              className={`h-3 w-3 rounded-full border ${c.border} ${c.bg} ${
+                memo.color === c.id ? "ring-2 ring-ink-900 ring-offset-1" : ""
+              }`}
+              title={c.id}
+            />
+          ))}
+        </div>
+        <button
+          onClick={onRemove}
+          className="hidden h-4 w-4 items-center justify-center rounded-full bg-white/80 text-[10px] text-ink-400 group-hover/memo:flex hover:text-ink-900"
+          title="Delete memo (메모 삭제)"
+        >
+          ×
+        </button>
+      </div>
+      <textarea
+        className={`flex-1 min-h-[60px] resize-none bg-transparent text-[11px] leading-relaxed ${colorDef.text} placeholder:text-ink-300 outline-none`}
+        placeholder="메모를 입력하세요... (Write a note...)"
+        value={memo.text}
+        onChange={(e) => onChange({ text: e.target.value })}
+      />
+      <div className="mt-1 text-[8px] text-ink-400 tabular-nums text-right">
+        {new Date(memo.createdAt).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+      </div>
     </div>
   );
 }

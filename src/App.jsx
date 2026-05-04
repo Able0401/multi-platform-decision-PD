@@ -6,7 +6,7 @@ import IntroPages from "./components/IntroPages";
 import AdminView from "./components/AdminView";
 import Step2Timeline from "./steps/Step2Timeline";
 import Step3Canvas from "./steps/Step3Canvas";
-import Step4Compare from "./steps/Step4Compare";
+import Step4Discussion from "./steps/Step4Compare";
 
 function StepView() {
   const { state } = useStore();
@@ -16,7 +16,7 @@ function StepView() {
     case 3:
       return <Step3Canvas />;
     case 4:
-      return <Step4Compare />;
+      return <Step4Discussion />;
     default:
       return <Step2Timeline />;
   }

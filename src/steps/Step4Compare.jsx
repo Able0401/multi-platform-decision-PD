@@ -1,87 +1,56 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { uid } from "../utils/id";
 import ComponentCard from "../kit/ComponentCard";
 import { downloadElementPNG } from "../utils/exportUtils";
 import { findComponent } from "../kit/catalog";
 
-// Sentinel used as targetItemId when the sticker is for the canvas/UI as a whole,
-// not a specific component on it.
-export const CANVAS_STICKER_TARGET = "__canvas__";
-
-export default function Step4Compare() {
+export default function Step4Discussion() {
   const { state, dispatch } = useStore();
   const gridRef = useRef(null);
 
-  const voterId = state.currentParticipantId;
-  const voter = voterId ? state.participants[voterId] : null;
+  const currentId = state.currentParticipantId;
   const participantIds = Object.keys(state.participants);
 
-  const placedByVoter = voter?.step4.stickers ?? [];
-  const placedCount = placedByVoter.length;
+  const [discussionInput, setDiscussionInput] = useState("");
 
-  // Aggregate sticker counts across all voters: { "<participantId>:<itemId|__canvas__>": [voterId,...] }
-  const stickerMap = useMemo(() => {
-    const map = {};
+  // Aggregate discussion comments across all participants
+  const allDiscussions = useMemo(() => {
+    const items = [];
     for (const pid of participantIds) {
-      const stickers = state.participants[pid]?.step4?.stickers ?? [];
-      for (const s of stickers) {
-        const key = `${s.targetParticipantId}:${s.targetItemId}`;
-        (map[key] ??= []).push(pid);
+      const discussions =
+        state.participants[pid]?.step4?.discussions ?? [];
+      for (const d of discussions) {
+        items.push({ ...d, authorId: pid });
       }
     }
-    return map;
+    // Sort by time
+    items.sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+    return items;
   }, [state.participants, participantIds]);
 
-  // Component-level rollup: total sticker counts per componentId across all canvases
-  const componentRollup = useMemo(() => {
-    const counts = {};
-    for (const pid of participantIds) {
-      const items = state.participants[pid]?.step3?.items ?? [];
-      for (const it of items) {
-        const cnt = (stickerMap[`${pid}:${it.id}`] ?? []).length;
-        if (cnt > 0) {
-          counts[it.componentId] = (counts[it.componentId] ?? 0) + cnt;
-        }
-      }
-    }
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [participantIds, state.participants, stickerMap]);
-
-  // Canvas-level (UI as a whole) rollup
-  const canvasRollup = useMemo(() => {
-    const entries = [];
-    for (const pid of participantIds) {
-      const cnt = (stickerMap[`${pid}:${CANVAS_STICKER_TARGET}`] ?? []).length;
-      if (cnt > 0) entries.push([pid, cnt]);
-    }
-    return entries.sort((a, b) => b[1] - a[1]);
-  }, [participantIds, stickerMap]);
-
-  const toggleSticker = (targetParticipantId, targetItemId) => {
-    if (!voterId) return;
-    const existing = placedByVoter.find(
-      (s) =>
-        s.targetParticipantId === targetParticipantId &&
-        s.targetItemId === targetItemId
-    );
-    if (existing) {
-      dispatch({ type: "S4_REMOVE_STICKER", id: existing.id });
-      return;
-    }
+  const addDiscussion = (targetParticipantId, text) => {
+    if (!currentId || !text.trim()) return;
     dispatch({
-      type: "S4_ADD_STICKER",
-      sticker: {
-        id: uid("st"),
+      type: "S4_ADD_DISCUSSION",
+      discussion: {
+        id: uid("disc"),
         targetParticipantId,
-        targetItemId,
+        text: text.trim(),
+        createdAt: new Date().toISOString(),
       },
     });
   };
 
+  const removeDiscussion = (id) => {
+    dispatch({ type: "S4_REMOVE_DISCUSSION", id });
+  };
+
   const handleExportPNG = async () => {
     if (!gridRef.current) return;
-    const filename = `mpdt_compare_${new Date()
+    const filename = `mpdt_discussion_${new Date()
       .toISOString()
       .slice(0, 19)
       .replace(/[:T]/g, "-")}.png`;
@@ -99,27 +68,24 @@ export default function Step4Compare() {
   }
 
   return (
-    <div className="grid h-full grid-cols-[1fr_300px] gap-4 p-4">
+    <div className="grid h-full grid-cols-[1fr_340px] gap-4 p-4">
       <section className="flex flex-col overflow-hidden">
         <div className="mb-3 flex items-center justify-between">
           <div>
             <div className="text-[13px] font-semibold text-ink-900">
-              Compare & Vote
+              Discussion
             </div>
             <div className="text-[11px] text-ink-500">
-              비교·투표 — Click a component or the whole UI to place a sticker
-              (컴포넌트 또는 전체 UI에 스티커 부착)
+              논의 — 다른 참여자의 캔버스에 의견을 남겨주세요
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <VoterPicker
-              voterId={voterId}
-              participantIds={participantIds}
-              onChange={(id) =>
-                dispatch({ type: "SELECT_PARTICIPANT", id })
-              }
-            />
-            <StickerCounter placed={placedCount} />
+            <div className="flex items-center gap-1.5 rounded-md bg-ink-50 px-2.5 py-1">
+              <span className="text-[11px] text-ink-500">Viewing as</span>
+              <span className="rounded-full bg-ink-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+                {currentId}
+              </span>
+            </div>
             <button className="btn-ghost" onClick={handleExportPNG}>
               Save PNG
             </button>
@@ -135,92 +101,59 @@ export default function Step4Compare() {
               <ParticipantCanvasCard
                 key={pid}
                 participant={state.participants[pid]}
-                stickerMap={stickerMap}
-                voterId={voterId}
-                onToggleSticker={toggleSticker}
+                currentUserId={currentId}
+                allDiscussions={allDiscussions}
+                onAddDiscussion={(text) => addDiscussion(pid, text)}
+                onRemoveDiscussion={removeDiscussion}
               />
             ))}
           </div>
         </div>
       </section>
 
+      {/* Discussion thread sidebar */}
       <aside className="card flex flex-col overflow-hidden">
         <div className="border-b border-ink-100 px-3 py-2.5">
           <div className="text-[13px] font-semibold text-ink-900">
-            Top components
+            All Discussions
           </div>
           <div className="text-[11px] text-ink-500">
-            가장 많이 선택된 요소
+            전체 논의 내용
           </div>
         </div>
-        <div className="overflow-y-auto p-3 space-y-1.5">
-          {componentRollup.length === 0 && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {allDiscussions.length === 0 && (
             <div className="text-[12px] text-ink-300">
-              No stickers placed yet.
+              No discussions yet.
               <br />
-              아직 스티커가 없어요.
+              아직 논의가 없어요.
             </div>
           )}
-          {componentRollup.map(([cid, n], i) => {
-            const def = findComponent(cid);
-            return (
-              <div
-                key={cid}
-                className="flex items-center justify-between rounded-md border border-ink-100 px-2.5 py-1.5"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="grid h-5 w-5 place-items-center rounded-full bg-ink-50 text-[10px] font-bold text-ink-500">
-                    {i + 1}
-                  </span>
-                  <div>
-                    <div className="text-[12px] font-medium text-ink-900">
-                      {def?.label ?? cid}
-                    </div>
-                    <div className="text-[10px] text-ink-500">
-                      {def?.labelKo}
-                    </div>
-                  </div>
-                </div>
-                <span className="rounded-full bg-sticker/30 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink-900">
-                  {n}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-2 border-t border-ink-100 px-3 py-2.5">
-          <div className="text-[13px] font-semibold text-ink-900">
-            Top UIs (whole canvas)
-          </div>
-          <div className="text-[11px] text-ink-500">
-            전체 UI 인기 순
-          </div>
-        </div>
-        <div className="overflow-y-auto p-3 space-y-1.5">
-          {canvasRollup.length === 0 && (
-            <div className="text-[12px] text-ink-300">
-              No UI stickers yet.
-              <br />
-              아직 UI 스티커가 없어요.
-            </div>
-          )}
-          {canvasRollup.map(([pid, n], i) => (
+          {allDiscussions.map((d) => (
             <div
-              key={pid}
-              className="flex items-center justify-between rounded-md border border-ink-100 px-2.5 py-1.5"
+              key={d.id}
+              className="rounded-md border border-ink-100 bg-ink-50/40 px-2.5 py-2"
             >
-              <div className="flex items-center gap-2">
-                <span className="grid h-5 w-5 place-items-center rounded-full bg-ink-50 text-[10px] font-bold text-ink-500">
-                  {i + 1}
-                </span>
-                <div className="text-[12px] font-medium text-ink-900 truncate">
-                  {pid}
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded bg-ink-900 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                    {d.authorId}
+                  </span>
+                  <span className="text-[9px] text-ink-400">→</span>
+                  <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold text-accent">
+                    {d.targetParticipantId}
+                  </span>
                 </div>
+                <span className="text-[9px] text-ink-300 tabular-nums">
+                  {new Date(d.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
               </div>
-              <span className="rounded-full bg-sticker/30 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink-900">
-                ★ {n}
-              </span>
+              <div className="text-[11px] text-ink-700 whitespace-pre-wrap break-words">
+                {d.text}
+              </div>
             </div>
           ))}
         </div>
@@ -229,116 +162,141 @@ export default function Step4Compare() {
   );
 }
 
-function VoterPicker({ voterId, participantIds, onChange }) {
-  return (
-    <label className="flex items-center gap-1.5">
-      <span className="label-bi-sub">Voter (투표자)</span>
-      <select
-        className="input !w-auto !py-1 !text-[12px]"
-        value={voterId ?? ""}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {participantIds.map((id) => (
-          <option key={id} value={id}>
-            {id}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function StickerCounter({ placed }) {
-  return (
-    <div className="flex items-center gap-1.5 rounded-md bg-ink-50 px-2.5 py-1">
-      <span className="text-[11px] text-ink-500">Stickers placed</span>
-      <span className="rounded-full bg-sticker/40 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink-900">
-        ★ {placed}
-      </span>
-    </div>
-  );
-}
-
 function ParticipantCanvasCard({
   participant,
-  stickerMap,
-  voterId,
-  onToggleSticker,
+  currentUserId,
+  allDiscussions,
+  onAddDiscussion,
+  onRemoveDiscussion,
 }) {
   const items = participant.step3.items;
-  const isCurrentVoter = participant.id === voterId;
+  const isCurrentUser = participant.id === currentUserId;
+  const [showInput, setShowInput] = useState(false);
+  const [text, setText] = useState("");
 
-  const canvasVoters =
-    stickerMap[`${participant.id}:${CANVAS_STICKER_TARGET}`] ?? [];
-  const youPlacedCanvas = canvasVoters.includes(voterId);
+  // Discussions targeting this participant
+  const discussions = allDiscussions.filter(
+    (d) => d.targetParticipantId === participant.id
+  );
+
+  const handleSubmit = () => {
+    if (!text.trim()) return;
+    onAddDiscussion(text);
+    setText("");
+    setShowInput(false);
+  };
 
   return (
     <div className="card overflow-hidden">
-      <div
-        className={`flex items-center justify-between border-b border-ink-100 px-3 py-2 ${
-          youPlacedCanvas ? "bg-sticker/20" : ""
-        }`}
-      >
+      <div className="flex items-center justify-between border-b border-ink-100 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="rounded bg-ink-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
             {participant.id}
           </span>
-          {isCurrentVoter && (
-            <span className="text-[10px] text-accent">you (투표자)</span>
+          {isCurrentUser && (
+            <span className="text-[10px] text-accent">you (나)</span>
           )}
         </div>
         <button
-          onClick={() =>
-            onToggleSticker(participant.id, CANVAS_STICKER_TARGET)
-          }
-          title="Sticker the whole UI (전체 UI에 스티커)"
-          className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold transition ${
-            youPlacedCanvas
-              ? "border-ink-900 bg-sticker text-ink-900"
-              : "border-ink-100 bg-white text-ink-500 hover:border-ink-300 hover:text-ink-900"
-          }`}
+          onClick={() => setShowInput(!showInput)}
+          className="flex items-center gap-1 rounded-full border border-ink-100 bg-white px-2 py-0.5 text-[10px] font-semibold text-ink-500 hover:border-accent hover:text-accent transition"
+          title="Add discussion (의견 추가)"
         >
-          ★ overall
-          {canvasVoters.length > 0 && (
-            <span className="ml-0.5 rounded-full bg-ink-900 px-1.5 py-px text-[9px] tabular-nums text-white">
-              {canvasVoters.length}
-            </span>
-          )}
+          💬 의견
         </button>
       </div>
+
       {items.length === 0 ? (
         <div className="grid h-32 place-items-center text-[11px] text-ink-300">
           (empty canvas)
         </div>
       ) : (
         <div className="space-y-2 p-2.5">
-          {items.map((it) => {
-            const stickerVoters =
-              stickerMap[`${participant.id}:${it.id}`] ?? [];
-            const youPlaced = stickerVoters.includes(voterId);
-            return (
-              <button
-                key={it.id}
-                onClick={() => onToggleSticker(participant.id, it.id)}
-                className={`relative w-full cursor-pointer rounded-card text-left transition ${
-                  youPlaced
-                    ? "ring-2 ring-sticker"
-                    : "hover:ring-1 hover:ring-accent/40"
-                }`}
-              >
-                <ComponentCard
-                  componentId={it.componentId}
-                  text={it.text}
-                  variant="preview"
-                />
-                {stickerVoters.length > 0 && (
-                  <div className="absolute -right-1 -top-1 flex items-center gap-0.5 rounded-full bg-sticker px-1.5 py-0.5 text-[10px] font-bold text-ink-900 shadow-card">
-                    ★ {stickerVoters.length}
-                  </div>
-                )}
-              </button>
-            );
-          })}
+          {items.map((it) => (
+            <div key={it.id} className="w-full rounded-card">
+              <ComponentCard
+                componentId={it.componentId}
+                text={it.text}
+                variant="preview"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Discussion input */}
+      {showInput && (
+        <div className="border-t border-ink-100 p-2.5">
+          <textarea
+            autoFocus
+            className="input min-h-[48px] resize-none !text-[11px]"
+            placeholder="의견을 남겨주세요... (Leave your comment...)"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+          />
+          <div className="mt-1.5 flex justify-end gap-1">
+            <button
+              className="btn-ghost !py-0.5 !text-[10px]"
+              onClick={() => {
+                setShowInput(false);
+                setText("");
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn-primary !py-0.5 !text-[10px]"
+              onClick={handleSubmit}
+              disabled={!text.trim()}
+            >
+              Post (등록)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Discussion comments for this canvas */}
+      {discussions.length > 0 && (
+        <div className="border-t border-ink-100 bg-ink-50/30 p-2 space-y-1.5">
+          <div className="text-[9px] font-semibold uppercase tracking-wider text-ink-400 px-0.5">
+            💬 {discussions.length} comments
+          </div>
+          {discussions.map((d) => (
+            <div
+              key={d.id}
+              className="group/comment relative rounded-md bg-white border border-ink-100 px-2 py-1.5"
+            >
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[9px] font-semibold text-ink-700">
+                  {d.authorId}
+                </span>
+                <span className="text-[8px] text-ink-300 tabular-nums">
+                  {new Date(d.createdAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              </div>
+              <div className="text-[10px] text-ink-700 whitespace-pre-wrap break-words">
+                {d.text}
+              </div>
+              {d.authorId === currentUserId && (
+                <button
+                  onClick={() => onRemoveDiscussion(d.id)}
+                  className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded-full border border-ink-100 bg-white text-[9px] text-ink-400 shadow-card group-hover/comment:flex hover:text-ink-900"
+                  title="Delete comment (삭제)"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

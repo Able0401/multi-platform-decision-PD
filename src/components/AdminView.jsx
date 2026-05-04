@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { useStore } from "../state/store";
 import ComponentCard from "../kit/ComponentCard";
 import { downloadJSON } from "../utils/exportUtils";
-import { CANVAS_STICKER_TARGET } from "../steps/Step4Compare";
+import { doc, deleteDoc } from "firebase/firestore";
+import { db, PARTICIPANTS } from "../firebase";
 
 export default function AdminView() {
   const { state, dispatch } = useStore();
@@ -11,13 +12,20 @@ export default function AdminView() {
   const participants = state.participants;
   const ids = Object.keys(participants).sort();
 
-  const stickerRollup = useMemo(() => {
+  // Aggregate discussion counts
+  const discussionCounts = useMemo(() => {
     const counts = {};
     for (const pid of ids) {
-      const stickers = participants[pid]?.step4?.stickers ?? [];
-      for (const s of stickers) {
-        const key = `${s.targetParticipantId}:${s.targetItemId}`;
-        counts[key] = (counts[key] ?? 0) + 1;
+      const discussions = participants[pid]?.step4?.discussions ?? [];
+      counts[pid] = {
+        given: discussions.length,
+        received: 0,
+      };
+      for (const d of discussions) {
+        if (!counts[d.targetParticipantId]) {
+          counts[d.targetParticipantId] = { given: 0, received: 0 };
+        }
+        counts[d.targetParticipantId].received++;
       }
     }
     return counts;
@@ -33,6 +41,74 @@ export default function AdminView() {
     );
   };
 
+  const handleDeleteParticipant = async (pid) => {
+    const p = participants[pid];
+    const journey = p?.step2?.cards?.length ?? 0;
+    const items = p?.step3?.items?.length ?? 0;
+    const memos = p?.step2?.memos?.length ?? 0;
+    const discussions = p?.step4?.discussions?.length ?? 0;
+
+    const confirmMsg = `정말로 "${pid}" 참여자를 삭제하시겠습니까?\n\nDelete participant "${pid}"?\n\nData to be deleted:\n- Journey cards: ${journey}\n- Canvas items: ${items}\n- Memos: ${memos}\n- Discussions: ${discussions}`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    // Delete from Firestore
+    try {
+      await deleteDoc(doc(db, PARTICIPANTS, pid));
+    } catch (err) {
+      console.warn("[firebase] delete participant error:", err);
+    }
+
+    // Delete from local state
+    dispatch({ type: "DELETE_PARTICIPANT", id: pid });
+
+    // If we were viewing this participant, clear selection
+    if (selected === pid) setSelected(null);
+  };
+
+  const handleClearParticipantData = async (pid, dataType) => {
+    const labels = {
+      journey: "여정 카드 (Journey cards)",
+      canvas: "캔버스 아이템 (Canvas items)",
+      memos: "메모 (Memos)",
+      discussions: "논의 (Discussions)",
+      all: "모든 데이터 (All data)",
+    };
+
+    if (
+      !window.confirm(
+        `"${pid}"의 ${labels[dataType]}를 삭제하시겠습니까?\nDelete ${labels[dataType]} for "${pid}"?`
+      )
+    )
+      return;
+
+    const p = { ...participants[pid] };
+
+    switch (dataType) {
+      case "journey":
+        p.step2 = { ...p.step2, cards: [] };
+        break;
+      case "canvas":
+        p.step3 = { ...p.step3, items: [] };
+        break;
+      case "memos":
+        p.step2 = { ...p.step2, memos: [] };
+        break;
+      case "discussions":
+        p.step4 = { ...p.step4, discussions: [] };
+        break;
+      case "all":
+        p.step2 = { cards: [], memos: [] };
+        p.step3 = { items: [] };
+        p.step4 = { discussions: [] };
+        break;
+    }
+
+    // We need to temporarily set this participant as current to dispatch a patch
+    dispatch({ type: "SELECT_PARTICIPANT", id: pid });
+    dispatch({ type: "PATCH_PARTICIPANT", patch: p });
+  };
+
   return (
     <div className="flex h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-ink-100 bg-white/95 px-5 py-2.5 backdrop-blur">
@@ -45,7 +121,7 @@ export default function AdminView() {
               Admin · All Participants
             </div>
             <div className="text-[11px] text-ink-500">
-              관리자 — 모든 참여자 보기
+              관리자 — 모든 참여자 보기 · 삭제 가능
             </div>
           </div>
           <span className="ml-2 rounded-full bg-ink-50 px-2 py-0.5 text-[11px] tabular-nums text-ink-700">
@@ -80,44 +156,57 @@ export default function AdminView() {
               const p = participants[pid];
               const journey = p.step2?.cards?.length ?? 0;
               const items = p.step3?.items?.length ?? 0;
-              const stickersGiven = p.step4?.stickers?.length ?? 0;
-              const stickersReceived = Object.entries(stickerRollup).reduce(
-                (n, [key, c]) =>
-                  key.startsWith(`${pid}:`) &&
-                  !key.endsWith(`:${CANVAS_STICKER_TARGET}`)
-                    ? n + c
-                    : n,
-                0
-              );
-              const overallStickers =
-                stickerRollup[`${pid}:${CANVAS_STICKER_TARGET}`] ?? 0;
+              const memos = p.step2?.memos?.length ?? 0;
+              const discussionsGiven =
+                discussionCounts[pid]?.given ?? 0;
+              const discussionsReceived =
+                discussionCounts[pid]?.received ?? 0;
               const active = selected === pid;
               return (
-                <button
-                  key={pid}
-                  onClick={() => setSelected(pid)}
-                  className={`block w-full rounded-md border px-2.5 py-2 text-left transition ${
-                    active
-                      ? "border-accent bg-accent-soft"
-                      : "border-ink-100 bg-white hover:border-ink-300"
-                  }`}
-                >
-                  <div className="text-[13px] font-semibold text-ink-900 truncate">
-                    {pid}
-                  </div>
-                  <div className="text-[10px] text-ink-500">
-                    {p.startedAt
-                      ? new Date(p.startedAt).toLocaleString()
-                      : ""}
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-ink-500">
-                    <Stat label="journey" value={journey} />
-                    <Stat label="items" value={items} />
-                    <Stat label="given" value={stickersGiven} />
-                    <Stat label="★" value={stickersReceived} highlight />
-                    <Stat label="UI ★" value={overallStickers} highlight />
-                  </div>
-                </button>
+                <div key={pid} className="group/participant relative">
+                  <button
+                    onClick={() => setSelected(pid)}
+                    className={`block w-full rounded-md border px-2.5 py-2 text-left transition ${
+                      active
+                        ? "border-accent bg-accent-soft"
+                        : "border-ink-100 bg-white hover:border-ink-300"
+                    }`}
+                  >
+                    <div className="text-[13px] font-semibold text-ink-900 truncate">
+                      {pid}
+                    </div>
+                    <div className="text-[10px] text-ink-500">
+                      {p.startedAt
+                        ? new Date(p.startedAt).toLocaleString()
+                        : ""}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-ink-500">
+                      <Stat label="journey" value={journey} />
+                      <Stat label="items" value={items} />
+                      <Stat label="memos" value={memos} />
+                      <Stat
+                        label="💬"
+                        value={discussionsGiven}
+                      />
+                      <Stat
+                        label="received"
+                        value={discussionsReceived}
+                        highlight
+                      />
+                    </div>
+                  </button>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteParticipant(pid);
+                    }}
+                    className="absolute right-1.5 top-1.5 hidden h-5 w-5 items-center justify-center rounded-full border border-red-200 bg-red-50 text-[11px] text-red-500 shadow-sm group-hover/participant:flex hover:bg-red-100 hover:text-red-700 transition"
+                    title={`Delete participant "${pid}" (참여자 삭제)`}
+                  >
+                    ×
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -134,7 +223,13 @@ export default function AdminView() {
           ) : (
             <ParticipantDetail
               participant={participants[selected]}
-              stickerRollup={stickerRollup}
+              discussionCounts={discussionCounts}
+              onDeleteParticipant={() =>
+                handleDeleteParticipant(selected)
+              }
+              onClearData={(dataType) =>
+                handleClearParticipantData(selected, dataType)
+              }
             />
           )}
         </section>
@@ -147,7 +242,7 @@ function Stat({ label, value, highlight }) {
   return (
     <span
       className={`rounded px-1.5 py-0.5 tabular-nums ${
-        highlight ? "bg-sticker/40 text-ink-900" : "bg-ink-50 text-ink-700"
+        highlight ? "bg-accent/20 text-accent" : "bg-ink-50 text-ink-700"
       }`}
     >
       {value} {label}
@@ -155,11 +250,16 @@ function Stat({ label, value, highlight }) {
   );
 }
 
-function ParticipantDetail({ participant, stickerRollup }) {
+function ParticipantDetail({
+  participant,
+  discussionCounts,
+  onDeleteParticipant,
+  onClearData,
+}) {
   const cards = participant.step2?.cards ?? [];
+  const memos = participant.step2?.memos ?? [];
   const items = participant.step3?.items ?? [];
-  const overallStickers =
-    stickerRollup[`${participant.id}:${CANVAS_STICKER_TARGET}`] ?? 0;
+  const discussions = participant.step4?.discussions ?? [];
 
   return (
     <div className="space-y-6">
@@ -169,17 +269,60 @@ function ParticipantDetail({ participant, stickerRollup }) {
             {participant.id}
           </div>
           <div className="text-[11px] text-ink-500">
-            Started {participant.startedAt ? new Date(participant.startedAt).toLocaleString() : "—"}
+            Started{" "}
+            {participant.startedAt
+              ? new Date(participant.startedAt).toLocaleString()
+              : "—"}
           </div>
         </div>
-        {overallStickers > 0 && (
-          <div className="flex items-center gap-1 rounded-full bg-sticker/40 px-3 py-1 text-[12px] font-semibold text-ink-900">
-            ★ {overallStickers} for the whole UI
-            <span className="text-[10px] font-normal text-ink-700">
-              (전체 UI)
-            </span>
+        <div className="flex items-center gap-2">
+          {/* Data management buttons */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onClearData("journey")}
+              className="rounded-md border border-ink-100 px-2 py-1 text-[10px] text-ink-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition"
+              title="Clear journey cards (여정 카드 삭제)"
+            >
+              🗑 Journey
+            </button>
+            <button
+              onClick={() => onClearData("canvas")}
+              className="rounded-md border border-ink-100 px-2 py-1 text-[10px] text-ink-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition"
+              title="Clear canvas items (캔버스 아이템 삭제)"
+            >
+              🗑 Canvas
+            </button>
+            <button
+              onClick={() => onClearData("memos")}
+              className="rounded-md border border-ink-100 px-2 py-1 text-[10px] text-ink-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition"
+              title="Clear memos (메모 삭제)"
+            >
+              🗑 Memos
+            </button>
+            <button
+              onClick={() => onClearData("discussions")}
+              className="rounded-md border border-ink-100 px-2 py-1 text-[10px] text-ink-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition"
+              title="Clear discussions (논의 삭제)"
+            >
+              🗑 Discussions
+            </button>
           </div>
-        )}
+          <div className="h-5 w-px bg-ink-100" />
+          <button
+            onClick={() => onClearData("all")}
+            className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 transition"
+            title="Clear all data (모든 데이터 삭제)"
+          >
+            🗑 All Data
+          </button>
+          <button
+            onClick={onDeleteParticipant}
+            className="rounded-md border border-red-300 bg-red-500 px-2.5 py-1 text-[10px] font-medium text-white hover:bg-red-600 transition"
+            title="Delete this participant (참여자 삭제)"
+          >
+            ✕ Delete Participant
+          </button>
+        </div>
       </div>
 
       {/* Journey */}
@@ -214,6 +357,44 @@ function ParticipantDetail({ participant, stickerRollup }) {
         )}
       </section>
 
+      {/* Memos */}
+      {memos.length > 0 && (
+        <section>
+          <SectionHeader en="Memos" ko="메모" />
+          <div className="flex flex-wrap gap-2">
+            {memos.map((memo) => {
+              const colorMap = {
+                yellow: "bg-yellow-100 border-yellow-300",
+                blue: "bg-blue-100 border-blue-300",
+                green: "bg-green-100 border-green-300",
+                pink: "bg-pink-100 border-pink-300",
+                purple: "bg-purple-100 border-purple-300",
+              };
+              const cls =
+                colorMap[memo.color] ?? "bg-yellow-100 border-yellow-300";
+              return (
+                <div
+                  key={memo.id}
+                  className={`w-[200px] rounded-lg border p-2.5 ${cls}`}
+                >
+                  <div className="text-[11px] whitespace-pre-wrap break-words">
+                    {memo.text || (
+                      <span className="text-ink-300 italic">(empty memo)</span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-[8px] text-ink-400 tabular-nums text-right">
+                    {new Date(memo.createdAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {/* Canvas */}
       <section>
         <SectionHeader en="Ideal Screen Canvas" ko="이상적인 화면" />
@@ -225,36 +406,55 @@ function ParticipantDetail({ participant, stickerRollup }) {
               className="relative overflow-hidden rounded-[16px] bg-ink-50/40"
               style={{ width: 440, height: 880 }}
             >
-              {items.map((it) => {
-                const stickers =
-                  Object.entries(stickerRollup).find(
-                    ([k]) => k === `${participant.id}:${it.id}`
-                  )?.[1] ?? 0;
-                return (
-                  <div
-                    key={it.id}
-                    style={{
-                      position: "absolute",
-                      left: it.x,
-                      top: it.y,
-                      width: it.w ?? 240,
-                      zIndex: it.z ?? 1,
-                    }}
-                  >
-                    <ComponentCard
-                      componentId={it.componentId}
-                      text={it.text}
-                      variant="preview"
-                    />
-                    {stickers > 0 && (
-                      <div className="absolute -right-1 -top-1 rounded-full bg-sticker px-1.5 py-0.5 text-[10px] font-bold text-ink-900 shadow-card">
-                        ★ {stickers}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {items.map((it) => (
+                <div
+                  key={it.id}
+                  style={{
+                    position: "absolute",
+                    left: it.x,
+                    top: it.y,
+                    width: it.w ?? 240,
+                    zIndex: it.z ?? 1,
+                  }}
+                >
+                  <ComponentCard
+                    componentId={it.componentId}
+                    text={it.text}
+                    variant="preview"
+                  />
+                </div>
+              ))}
             </div>
+          </div>
+        )}
+      </section>
+
+      {/* Discussions */}
+      <section>
+        <SectionHeader en="Discussions" ko="논의" />
+        {discussions.length === 0 ? (
+          <Empty />
+        ) : (
+          <div className="space-y-2">
+            {discussions.map((d) => (
+              <div
+                key={d.id}
+                className="rounded-md border border-ink-100 bg-ink-50/40 px-3 py-2"
+              >
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-[10px] text-ink-400">→</span>
+                  <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                    {d.targetParticipantId}
+                  </span>
+                  <span className="text-[9px] text-ink-300 tabular-nums ml-auto">
+                    {new Date(d.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="text-[12px] text-ink-700 whitespace-pre-wrap break-words">
+                  {d.text}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </section>

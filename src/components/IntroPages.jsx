@@ -117,9 +117,9 @@ const PAGES = [
           />
           <ActivityRow
             n={3}
-            en="Compare the screens (yours and others') and put stickers on what really matters."
-            ko="만든 화면들을 비교하면서, 진짜 중요한 곳에 스티커를 붙여요."
-            tag="Compare · 비교·투표"
+            en="Look at everyone's screens and leave comments to discuss what matters most."
+            ko="만든 화면들을 보면서, 서로 의견을 나누고 논의해요."
+            tag="Discussion · 논의"
           />
         </ol>
         <div className="mt-5 rounded-md border border-ink-100 bg-ink-50/60 p-3 text-[12px] leading-relaxed text-ink-700">

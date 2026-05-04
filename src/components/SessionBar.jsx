@@ -4,7 +4,7 @@ import { downloadJSON } from "../utils/exportUtils";
 const STEPS = [
   { id: 2, label: "Journey", subLabel: "여정 재구성" },
   { id: 3, label: "Canvas", subLabel: "컴포넌트 조합" },
-  { id: 4, label: "Compare", subLabel: "비교·투표" },
+  { id: 4, label: "Discussion", subLabel: "논의" },
 ];
 
 export default function SessionBar() {
