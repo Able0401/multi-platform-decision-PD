@@ -74,10 +74,9 @@ function reducer(state, action) {
           step4: { ...participants[id].step4, discussions: [] },
         };
       }
-      const introCompleted = !!participants[id].introCompleted;
       return {
         ...state,
-        mode: introCompleted ? "participant" : "intro",
+        mode: "participant",
         currentParticipantId: id,
         currentStep: 2,
         introStepIndex: 0,
