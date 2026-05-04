@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { uid } from "../utils/id";
 import ComponentCard from "../kit/ComponentCard";
@@ -68,7 +68,7 @@ export default function Step4Discussion() {
   }
 
   return (
-    <div className="grid h-full grid-cols-[1fr_340px] gap-4 p-4">
+    <div className="h-full p-4">
       <section className="flex flex-col overflow-hidden">
         <div className="mb-3 flex items-center justify-between">
           <div>
@@ -110,54 +110,6 @@ export default function Step4Discussion() {
           </div>
         </div>
       </section>
-
-      {/* Discussion thread sidebar */}
-      <aside className="card flex flex-col overflow-hidden">
-        <div className="border-b border-ink-100 px-3 py-2.5">
-          <div className="text-[13px] font-semibold text-ink-900">
-            All Discussions
-          </div>
-          <div className="text-[11px] text-ink-500">
-            전체 논의 내용
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          {allDiscussions.length === 0 && (
-            <div className="text-[12px] text-ink-300">
-              No discussions yet.
-              <br />
-              아직 논의가 없어요.
-            </div>
-          )}
-          {allDiscussions.map((d) => (
-            <div
-              key={d.id}
-              className="rounded-md border border-ink-100 bg-ink-50/40 px-2.5 py-2"
-            >
-              <div className="flex items-center justify-between gap-1 mb-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="rounded bg-ink-900 px-1.5 py-0.5 text-[9px] font-semibold text-white">
-                    {d.authorId}
-                  </span>
-                  <span className="text-[9px] text-ink-400">→</span>
-                  <span className="rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-semibold text-accent">
-                    {d.targetParticipantId}
-                  </span>
-                </div>
-                <span className="text-[9px] text-ink-300 tabular-nums">
-                  {new Date(d.createdAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              </div>
-              <div className="text-[11px] text-ink-700 whitespace-pre-wrap break-words">
-                {d.text}
-              </div>
-            </div>
-          ))}
-        </div>
-      </aside>
     </div>
   );
 }
@@ -211,17 +163,7 @@ function ParticipantCanvasCard({
           (empty canvas)
         </div>
       ) : (
-        <div className="space-y-2 p-2.5">
-          {items.map((it) => (
-            <div key={it.id} className="w-full rounded-card">
-              <ComponentCard
-                componentId={it.componentId}
-                text={it.text}
-                variant="preview"
-              />
-            </div>
-          ))}
-        </div>
+        <MiniCanvas items={items} />
       )}
 
       {/* Discussion input */}
@@ -299,6 +241,69 @@ function ParticipantCanvasCard({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── Scaled-down exact replica of the original canvas ────────────────────── */
+
+const CANVAS_WIDTH = 440;
+const CANVAS_HEIGHT = 880;
+const FALLBACK_WIDTH = 240;
+
+function MiniCanvas({ items }) {
+  const containerRef = useRef(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Observe the container width to calculate scale factor
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const scale = containerWidth > 0 ? containerWidth / CANVAS_WIDTH : 0.5;
+  const scaledHeight = CANVAS_HEIGHT * scale;
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full overflow-hidden bg-ink-50/40"
+      style={{ height: scaledHeight }}
+    >
+      <div
+        style={{
+          width: CANVAS_WIDTH,
+          height: CANVAS_HEIGHT,
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+          position: "relative",
+        }}
+      >
+        {items.map((it) => (
+          <div
+            key={it.id}
+            style={{
+              position: "absolute",
+              left: it.x,
+              top: it.y,
+              width: it.w ?? FALLBACK_WIDTH,
+              zIndex: it.z ?? 1,
+            }}
+          >
+            <ComponentCard
+              componentId={it.componentId}
+              text={it.text}
+              variant="preview"
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
