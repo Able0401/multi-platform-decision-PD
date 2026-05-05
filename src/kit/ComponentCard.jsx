@@ -17,6 +17,7 @@ export default function ComponentCard({
   editing,
   onStartEdit,
   onEndEdit,
+  h,
 }) {
   const customs = useCustomComponents();
   const def = findComponent(componentId, customs);
@@ -42,6 +43,7 @@ export default function ComponentCard({
       onStartEdit={onStartEdit}
       onEndEdit={onEndEdit}
       onTextChange={onTextChange}
+      h={h}
     />
   );
 }
@@ -98,14 +100,16 @@ function CanvasCard({
   onStartEdit,
   onEndEdit,
   onTextChange,
+  h,
 }) {
   return (
     <div
-      className="select-none overflow-hidden rounded-card shadow-card"
+      className="select-none overflow-hidden rounded-card shadow-card flex flex-col"
       style={{
         background: "#fff",
         border: `1.5px solid ${colors.border}`,
         borderLeft: `4px solid ${colors.accent}`,
+        height: h ? `${h}px` : "auto",
       }}
     >
       {/* Header */}
@@ -126,17 +130,19 @@ function CanvasCard({
       </div>
 
       {/* Body */}
-      <EditableBody
-        def={def}
-        body={body}
-        colors={colors}
-        compact={compact}
-        editable={editable}
-        editing={editing}
-        onTextChange={onTextChange}
-        onStartEdit={onStartEdit}
-        onEndEdit={onEndEdit}
-      />
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <EditableBody
+          def={def}
+          body={body}
+          colors={colors}
+          compact={compact}
+          editable={editable}
+          editing={editing}
+          onTextChange={onTextChange}
+          onStartEdit={onStartEdit}
+          onEndEdit={onEndEdit}
+        />
+      </div>
     </div>
   );
 }
@@ -160,8 +166,7 @@ function EditableBody({
       <textarea
         autoFocus
         defaultValue={body}
-        rows={2}
-        className="w-full resize-none border-t px-2.5 py-2 text-[12px] leading-snug text-ink-900 outline-none"
+        className="w-full h-full min-h-[40px] resize-none border-t px-2.5 py-2 text-[12px] leading-snug text-ink-900 outline-none"
         style={{ borderColor: colors.border }}
         onBlur={(e) => {
           onTextChange?.(e.target.value);
@@ -182,7 +187,7 @@ function EditableBody({
 
   return (
     <div
-      className={`${
+      className={`min-h-full ${
         compact ? "px-2 py-1.5 text-[10px]" : "px-2.5 py-2 text-[12px]"
       } leading-snug text-ink-700`}
       onDoubleClick={() => editable && onStartEdit?.()}

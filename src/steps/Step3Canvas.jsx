@@ -25,10 +25,16 @@ import { downloadElementPNG } from "../utils/exportUtils";
 
 const CANVAS_WIDTH = 440;
 const CANVAS_HEIGHT = 880;
-const FALLBACK_WIDTH = 240;
-const FALLBACK_HEIGHT = 72;
-const MIN_ITEM_WIDTH = 120;
-const MAX_ITEM_WIDTH = CANVAS_WIDTH - 16;
+const GRID_X = 55;
+const GRID_Y = 55;
+const FALLBACK_WIDTH = 220;
+const FALLBACK_HEIGHT = 55;
+const MIN_ITEM_WIDTH = 110;
+const MAX_ITEM_WIDTH = CANVAS_WIDTH;
+
+function snap(val, step) {
+  return Math.round(val / step) * step;
+}
 
 export default function Step3Canvas() {
   const { dispatch } = useStore();
@@ -76,8 +82,9 @@ export default function Step3Canvas() {
       const def = findComponent(data.componentId, customs);
       if (!def) return;
       const w = def.defaultWidth ?? FALLBACK_WIDTH;
-      const x = clamp(dragRect.left - canvasRect.left, 0, CANVAS_WIDTH - w);
-      const y = clamp(dragRect.top - canvasRect.top, 0, CANVAS_HEIGHT - 60);
+      const h = def.defaultHeight ?? FALLBACK_HEIGHT;
+      const x = clamp(snap(dragRect.left - canvasRect.left, GRID_X), 0, CANVAS_WIDTH - w);
+      const y = clamp(snap(dragRect.top - canvasRect.top, GRID_Y), 0, CANVAS_HEIGHT - h);
       dispatch({
         type: "S3_ADD_ITEM",
         item: {
@@ -87,6 +94,7 @@ export default function Step3Canvas() {
           x,
           y,
           w,
+          h,
           z: items.length + 1,
         },
       });
@@ -97,8 +105,9 @@ export default function Step3Canvas() {
       const it = items.find((x) => x.id === data.id);
       if (!it) return;
       const w = it.w ?? FALLBACK_WIDTH;
-      const newX = clamp(it.x + delta.x, 0, CANVAS_WIDTH - w);
-      const newY = clamp(it.y + delta.y, 0, CANVAS_HEIGHT - 60);
+      const h = it.h ?? FALLBACK_HEIGHT;
+      const newX = clamp(snap(it.x + delta.x, GRID_X), 0, CANVAS_WIDTH - w);
+      const newY = clamp(snap(it.y + delta.y, GRID_Y), 0, CANVAS_HEIGHT - h);
       dispatch({
         type: "S3_UPDATE_ITEM",
         id: it.id,
@@ -253,6 +262,7 @@ export default function Step3Canvas() {
                 <CanvasItem
                   key={it.id}
                   item={it}
+                  def={findComponent(it.componentId, customs)}
                   editing={editingId === it.id}
                   onStartEdit={() => setEditingId(it.id)}
                   onEndEdit={() => setEditingId(null)}
@@ -263,11 +273,11 @@ export default function Step3Canvas() {
                       patch: { text },
                     })
                   }
-                  onResizeCommit={(w) =>
+                  onResizeCommit={(w, h) =>
                     dispatch({
                       type: "S3_UPDATE_ITEM",
                       id: it.id,
-                      patch: { w },
+                      patch: { w, h },
                     })
                   }
                   onRemove={() =>
@@ -368,8 +378,8 @@ function CreateComponentForm({ onCreate }) {
       group: "custom",
       icon: "✏️",
       defaultText: defaultText.trim(),
-      defaultWidth: 240,
-      defaultHeight: 80,
+      defaultWidth: 220,
+      defaultHeight: 110,
       colSpan: 2,
       rowSpan: 1,
     });
@@ -436,7 +446,15 @@ function CanvasDroppable({ canvasRef, children }) {
         if (canvasRef) canvasRef.current = el;
       }}
       className="relative overflow-hidden rounded-[16px] bg-ink-50/40"
-      style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
+      style={{ 
+        width: CANVAS_WIDTH, 
+        height: CANVAS_HEIGHT,
+        backgroundImage: `
+          linear-gradient(to right, rgba(0,0,0,0.06) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(0,0,0,0.06) 1px, transparent 1px)
+        `,
+        backgroundSize: `${GRID_X}px ${GRID_Y}px`,
+      }}
     >
       {children}
     </div>
@@ -445,6 +463,7 @@ function CanvasDroppable({ canvasRef, children }) {
 
 function CanvasItem({
   item,
+  def,
   editing,
   onStartEdit,
   onEndEdit,
@@ -459,29 +478,40 @@ function CanvasItem({
       disabled: editing,
     });
 
-  const baseW = item.w ?? FALLBACK_WIDTH;
-  const [draftW, setDraftW] = useState(null); // null when not actively resizing
-  const isResizing = draftW != null;
+  const baseW = item.w ?? def?.defaultWidth ?? FALLBACK_WIDTH;
+  const baseH = item.h ?? def?.defaultHeight ?? FALLBACK_HEIGHT;
+  const [draftW, setDraftW] = useState(null); 
+  const [draftH, setDraftH] = useState(null); 
+  const isResizing = draftW != null || draftH != null;
   const displayedW = draftW ?? baseW;
+  const displayedH = draftH ?? baseH;
 
   const handleResizePointerDown = (e) => {
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
+    const startY = e.clientY;
     const startW = baseW;
+    const startH = baseH;
     let lastW = startW;
+    let lastH = startH;
 
     const onMove = (ev) => {
       const dx = ev.clientX - startX;
-      const maxAllowed = Math.min(MAX_ITEM_WIDTH, CANVAS_WIDTH - item.x);
-      lastW = clamp(startW + dx, MIN_ITEM_WIDTH, maxAllowed);
+      const dy = ev.clientY - startY;
+      const maxAllowedW = Math.min(MAX_ITEM_WIDTH, CANVAS_WIDTH - item.x);
+      const maxAllowedH = Math.min(CANVAS_HEIGHT, CANVAS_HEIGHT - item.y);
+      lastW = clamp(snap(startW + dx, GRID_X), MIN_ITEM_WIDTH, maxAllowedW);
+      lastH = clamp(snap(startH + dy, GRID_Y), GRID_Y, maxAllowedH);
       setDraftW(lastW);
+      setDraftH(lastH);
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      onResizeCommit?.(lastW);
+      onResizeCommit?.(lastW, lastH);
       setDraftW(null);
+      setDraftH(null);
     };
 
     window.addEventListener("pointermove", onMove);
@@ -490,7 +520,7 @@ function CanvasItem({
 
   // Cleanup safety: if the component unmounts mid-resize, drop our listeners.
   useEffect(() => {
-    return () => setDraftW(null);
+    return () => { setDraftW(null); setDraftH(null); };
   }, []);
 
   const style = {
@@ -498,11 +528,13 @@ function CanvasItem({
     left: item.x,
     top: item.y,
     width: displayedW,
+    height: displayedH,
     transform:
       transform && !isResizing
-        ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+        ? `translate3d(${snap(transform.x, GRID_X)}px, ${snap(transform.y, GRID_Y)}px, 0)`
         : undefined,
     zIndex: isDragging || isResizing ? 50 : item.z ?? 1,
+    transition: isDragging ? "none" : "transform 0.1s ease-out, left 0.2s ease-out, top 0.2s ease-out",
   };
 
   return (
@@ -520,17 +552,17 @@ function CanvasItem({
           onStartEdit={onStartEdit}
           onEndEdit={onEndEdit}
           onTextChange={onTextChange}
+          h={displayedH}
         />
       </div>
 
-      {/* Resize handle (bottom-right corner) */}
       {!editing && (
         <div
           onPointerDown={handleResizePointerDown}
-          className="absolute -bottom-1 -right-1 hidden h-4 w-4 cursor-ew-resize items-center justify-center rounded-sm border border-ink-100 bg-white text-[9px] text-ink-500 shadow-card group-hover:flex hover:text-ink-900"
-          title="Drag to resize width (가로 크기 조절)"
+          className="absolute -bottom-1 -right-1 hidden h-4 w-4 cursor-nwse-resize items-center justify-center rounded-sm border border-ink-100 bg-white text-[9px] text-ink-500 shadow-card group-hover:flex hover:text-ink-900"
+          title="Drag to resize (크기 조절)"
         >
-          ↔
+          ↘
         </div>
       )}
 
@@ -545,10 +577,10 @@ function CanvasItem({
         </button>
       )}
 
-      {/* Width indicator while resizing */}
+      {/* Width/Height indicator while resizing */}
       {isResizing && (
-        <div className="pointer-events-none absolute -bottom-5 right-0 rounded bg-ink-900 px-1.5 py-0.5 text-[10px] tabular-nums text-white">
-          {Math.round(displayedW)}px
+        <div className="pointer-events-none absolute -bottom-5 right-0 rounded bg-ink-900 px-1.5 py-0.5 text-[10px] tabular-nums text-white whitespace-nowrap">
+          {Math.round(displayedW)} x {Math.round(displayedH)}
         </div>
       )}
     </div>
