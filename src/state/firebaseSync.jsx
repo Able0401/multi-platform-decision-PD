@@ -52,6 +52,7 @@ export function useFirebaseSync(state, dispatch) {
           customEmotions: Array.isArray(data.customEmotions)
             ? data.customEmotions
             : [],
+          topic: data.topic ?? "",
         });
       },
       (err) => console.warn("[firebase] globals listener error:", err)
@@ -86,6 +87,7 @@ export function useFirebaseSync(state, dispatch) {
     const data = {
       customComponents: state.customComponents,
       customEmotions: state.customEmotions,
+      topic: state.topic,
     };
     const json = JSON.stringify(data);
     if (lastGlobalsWrite.current === json) return;
@@ -100,5 +102,5 @@ export function useFirebaseSync(state, dispatch) {
       );
     }, 400);
     return () => clearTimeout(t);
-  }, [state.customComponents, state.customEmotions]);
+  }, [state.customComponents, state.customEmotions, state.topic]);
 }

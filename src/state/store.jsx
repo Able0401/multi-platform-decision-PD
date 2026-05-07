@@ -19,6 +19,7 @@ const initialState = {
   participants: {},
   customComponents: [],
   customEmotions: [],
+  topic: "",
 };
 
 function loadInitial() {
@@ -28,6 +29,7 @@ function loadInitial() {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed.customComponents)) parsed.customComponents = [];
       if (!Array.isArray(parsed.customEmotions)) parsed.customEmotions = [];
+      if (typeof parsed.topic !== "string") parsed.topic = "";
       // Ensure all participants have the new memos & discussions fields
       for (const pid of Object.keys(parsed.participants ?? {})) {
         const p = parsed.participants[pid];
@@ -139,7 +141,11 @@ function reducer(state, action) {
         ...state,
         customComponents: action.customComponents ?? state.customComponents,
         customEmotions: action.customEmotions ?? state.customEmotions,
+        topic: action.topic ?? state.topic,
       };
+    }
+    case "SET_TOPIC": {
+      return { ...state, topic: action.topic };
     }
 
     case "SELECT_PARTICIPANT":
@@ -277,6 +283,17 @@ function reducer(state, action) {
     }
 
     // STEP 3 actions
+    case "S3_SET_ITEMS": {
+      const pid = state.currentParticipantId;
+      const cur = state.participants[pid];
+      return {
+        ...state,
+        participants: {
+          ...state.participants,
+          [pid]: { ...cur, step3: { ...cur.step3, items: action.items } },
+        },
+      };
+    }
     case "S3_ADD_ITEM": {
       const pid = state.currentParticipantId;
       const cur = state.participants[pid];

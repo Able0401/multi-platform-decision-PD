@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
-import { useStore } from "../state/store";
+import { useStore, useCustomComponents } from "../state/store";
 import ComponentCard from "../kit/ComponentCard";
+import { findComponent } from "../kit/catalog";
 import { downloadJSON } from "../utils/exportUtils";
 import { doc, deleteDoc } from "firebase/firestore";
 import { db, PARTICIPANTS } from "../firebase";
@@ -139,6 +140,15 @@ export default function AdminView() {
             </button>
           </div>
         </div>
+        <div className="mt-3 flex items-center gap-2 border-t border-ink-100 pt-3">
+          <div className="text-[12px] font-semibold text-ink-700 w-12">주제:</div>
+          <input
+            className="input flex-1 bg-white !py-1.5"
+            placeholder="워크샵 주제를 입력하세요 (e.g. 배달 앱 비교)"
+            value={state.topic || ""}
+            onChange={(e) => dispatch({ type: "SET_TOPIC", topic: e.target.value })}
+          />
+        </div>
       </header>
 
       <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
@@ -260,6 +270,7 @@ function ParticipantDetail({
   const memos = participant.step2?.memos ?? [];
   const items = participant.step3?.items ?? [];
   const discussions = participant.step4?.discussions ?? [];
+  const customs = useCustomComponents();
 
   return (
     <div className="space-y-6">
@@ -406,24 +417,31 @@ function ParticipantDetail({
               className="relative overflow-hidden rounded-[16px] bg-ink-50/40"
               style={{ width: 440, height: 880 }}
             >
-              {items.map((it) => (
-                <div
-                  key={it.id}
-                  style={{
-                    position: "absolute",
-                    left: it.x,
-                    top: it.y,
-                    width: it.w ?? 240,
-                    zIndex: it.z ?? 1,
-                  }}
-                >
-                  <ComponentCard
-                    componentId={it.componentId}
-                    text={it.text}
-                    variant="preview"
-                  />
-                </div>
-              ))}
+              {items.map((it) => {
+                const def = findComponent(it.componentId, customs);
+                const w = it.w ?? def?.defaultWidth ?? 220;
+                const h = it.h ?? def?.defaultHeight ?? 55;
+                return (
+                  <div
+                    key={it.id}
+                    style={{
+                      position: "absolute",
+                      left: `${it.x}px`,
+                      top: `${it.y}px`,
+                      width: `${w}px`,
+                      height: `${h}px`,
+                      zIndex: it.z ?? 1,
+                    }}
+                  >
+                    <ComponentCard
+                      componentId={it.componentId}
+                      text={it.text}
+                      variant="preview"
+                      h={h}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

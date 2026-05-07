@@ -42,14 +42,36 @@ export default function Step3Canvas() {
   const customs = useCustomComponents();
   const canvasRef = useRef(null);
   const canvasFrameRef = useRef(null);
+  const sectionRef = useRef(null);
   const [editingId, setEditingId] = useState(null);
   const [activeDrag, setActiveDrag] = useState(null);
+  const [scale, setScale] = useState(1);
+
+  // Auto-scale canvas to fit screen
+  useEffect(() => {
+    if (!sectionRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      // Target bounds to fit the canvas + header + padding
+      const targetHeight = CANVAS_HEIGHT + 100;
+      const targetWidth = CANVAS_WIDTH + 48;
+      
+      const scaleY = height / targetHeight;
+      const scaleX = width / targetWidth;
+      setScale(Math.min(scaleX, scaleY, 1));
+    });
+    observer.observe(sectionRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   );
 
-  const items = participant?.step3.items ?? [];
+  const storeItems = participant?.step3.items ?? [];
+  const [liveItems, setLiveItems] = useState(null);
+  
+  const items = liveItems ?? storeItems;
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -66,8 +88,69 @@ export default function Step3Canvas() {
     setActiveDrag(e.active.data.current);
   };
 
+  const handleDragMove = (e) => {
+    const { active, delta } = e;
+    const data = active.data.current;
+    if (!data) return;
+
+    if (data.type === "canvas-item") {
+      const draggedId = data.id;
+      const draggedItem = storeItems.find((it) => it.id === draggedId);
+      if (!draggedItem) return;
+
+      const dw = draggedItem.w ?? FALLBACK_WIDTH;
+      const dh = draggedItem.h ?? FALLBACK_HEIGHT;
+      const dragX = clamp(snap(draggedItem.x + delta.x / scale, GRID_X), 0, CANVAS_WIDTH - dw);
+      const dragY = clamp(snap(draggedItem.y + delta.y / scale, GRID_Y), 0, CANVAS_HEIGHT - dh);
+
+      const nextItems = JSON.parse(JSON.stringify(storeItems));
+      const simDragged = nextItems.find(it => it.id === draggedId);
+      simDragged.x = dragX;
+      simDragged.y = dragY;
+
+      resolveOverlaps(nextItems, [draggedId]);
+
+      // Restore original position so dnd-kit transform works properly
+      const simDraggedAfter = nextItems.find(it => it.id === draggedId);
+      simDraggedAfter.x = draggedItem.x;
+      simDraggedAfter.y = draggedItem.y;
+
+      setLiveItems(nextItems);
+    }
+
+    if (data.type === "palette-item") {
+      const canvasRect = canvasRef.current?.getBoundingClientRect();
+      const dragRect = active.rect.current.translated;
+      if (!canvasRect || !dragRect) return;
+
+      const def = findComponent(data.componentId, customs);
+      const w = def?.defaultWidth ?? FALLBACK_WIDTH;
+      const h = def?.defaultHeight ?? FALLBACK_HEIGHT;
+
+      const dragX = clamp(snap((dragRect.left - canvasRect.left) / scale, GRID_X), 0, CANVAS_WIDTH - w);
+      const dragY = clamp(snap((dragRect.top - canvasRect.top) / scale, GRID_Y), 0, CANVAS_HEIGHT - h);
+
+      const nextItems = JSON.parse(JSON.stringify(storeItems));
+      const tempId = "temp-palette-drag";
+      nextItems.push({
+        id: tempId,
+        componentId: data.componentId,
+        x: dragX,
+        y: dragY,
+        w,
+        h,
+      });
+
+      resolveOverlaps(nextItems, [tempId]);
+      
+      const finalItems = nextItems.filter(it => it.id !== tempId);
+      setLiveItems(finalItems);
+    }
+  };
+
   const handleDragEnd = (e) => {
     setActiveDrag(null);
+    setLiveItems(null);
     const { active, over, delta } = e;
     const data = active.data.current;
     if (!data) return;
@@ -83,35 +166,49 @@ export default function Step3Canvas() {
       if (!def) return;
       const w = def.defaultWidth ?? FALLBACK_WIDTH;
       const h = def.defaultHeight ?? FALLBACK_HEIGHT;
-      const x = clamp(snap(dragRect.left - canvasRect.left, GRID_X), 0, CANVAS_WIDTH - w);
-      const y = clamp(snap(dragRect.top - canvasRect.top, GRID_Y), 0, CANVAS_HEIGHT - h);
+      const x = clamp(snap((dragRect.left - canvasRect.left) / scale, GRID_X), 0, CANVAS_WIDTH - w);
+      const y = clamp(snap((dragRect.top - canvasRect.top) / scale, GRID_Y), 0, CANVAS_HEIGHT - h);
+      
+      const newId = uid("it");
+      const nextItems = JSON.parse(JSON.stringify(storeItems));
+      nextItems.push({
+        id: newId,
+        componentId: def.id,
+        text: def.defaultText,
+        x,
+        y,
+        w,
+        h,
+        z: storeItems.length + 1,
+      });
+      resolveOverlaps(nextItems, [newId]);
+
       dispatch({
-        type: "S3_ADD_ITEM",
-        item: {
-          id: uid("it"),
-          componentId: def.id,
-          text: def.defaultText,
-          x,
-          y,
-          w,
-          h,
-          z: items.length + 1,
-        },
+        type: "S3_SET_ITEMS",
+        items: nextItems,
       });
       return;
     }
 
     if (data.type === "canvas-item") {
-      const it = items.find((x) => x.id === data.id);
+      const it = storeItems.find((x) => x.id === data.id);
       if (!it) return;
       const w = it.w ?? FALLBACK_WIDTH;
       const h = it.h ?? FALLBACK_HEIGHT;
-      const newX = clamp(snap(it.x + delta.x, GRID_X), 0, CANVAS_WIDTH - w);
-      const newY = clamp(snap(it.y + delta.y, GRID_Y), 0, CANVAS_HEIGHT - h);
+      const newX = clamp(snap(it.x + delta.x / scale, GRID_X), 0, CANVAS_WIDTH - w);
+      const newY = clamp(snap(it.y + delta.y / scale, GRID_Y), 0, CANVAS_HEIGHT - h);
+      
+      const nextItems = JSON.parse(JSON.stringify(storeItems));
+      const movedItem = nextItems.find((x) => x.id === data.id);
+      movedItem.x = newX;
+      movedItem.y = newY;
+      movedItem.z = storeItems.length + 1;
+
+      resolveOverlaps(nextItems, [data.id]);
+
       dispatch({
-        type: "S3_UPDATE_ITEM",
-        id: it.id,
-        patch: { x: newX, y: newY, z: items.length + 1 },
+        type: "S3_SET_ITEMS",
+        items: nextItems,
       });
     }
   };
@@ -137,6 +234,7 @@ export default function Step3Canvas() {
     <DndContext
       sensors={sensors}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
     >
       <div className="grid h-full grid-cols-[320px_1fr] gap-4 p-4">
@@ -224,11 +322,12 @@ export default function Step3Canvas() {
         </aside>
 
         {/* CANVAS */}
-        <section className="flex flex-col items-center justify-start overflow-auto py-4">
-          <div
-            className="mb-3 flex items-center justify-between gap-2"
-            style={{ width: CANVAS_WIDTH + 24 }}
-          >
+        <section ref={sectionRef} className="flex flex-col items-center justify-start overflow-hidden py-4">
+          <div style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}>
+            <div
+              className="mb-3 flex items-center justify-between gap-2"
+              style={{ width: CANVAS_WIDTH + 24 }}
+            >
             <div>
               <div className="text-[13px] font-semibold text-ink-900">
                 Ideal Screen Canvas
@@ -273,13 +372,17 @@ export default function Step3Canvas() {
                       patch: { text },
                     })
                   }
-                  onResizeCommit={(w, h) =>
+                  onResizeCommit={(w, h) => {
+                    const nextItems = JSON.parse(JSON.stringify(storeItems));
+                    const resizedItem = nextItems.find(x => x.id === it.id);
+                    resizedItem.w = w;
+                    resizedItem.h = h;
+                    resolveOverlaps(nextItems, [it.id]);
                     dispatch({
-                      type: "S3_UPDATE_ITEM",
-                      id: it.id,
-                      patch: { w, h },
-                    })
-                  }
+                      type: "S3_SET_ITEMS",
+                      items: nextItems,
+                    });
+                  }}
                   onRemove={() =>
                     dispatch({ type: "S3_REMOVE_ITEM", id: it.id })
                   }
@@ -299,6 +402,7 @@ export default function Step3Canvas() {
               )}
             </CanvasDroppable>
           </div>
+          </div>
         </section>
       </div>
 
@@ -310,6 +414,8 @@ export default function Step3Canvas() {
                 findComponent(activeDrag.componentId, customs)?.defaultWidth ??
                 FALLBACK_WIDTH,
               opacity: 0.9,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
             }}
           >
             <ComponentCard
@@ -321,6 +427,37 @@ export default function Step3Canvas() {
       </DragOverlay>
     </DndContext>
   );
+}
+
+function resolveOverlaps(items, movedItemIds) {
+  let queue = [...movedItemIds];
+  let iterations = 0;
+
+  while (queue.length > 0 && iterations < 1000) {
+    iterations++;
+    const currId = queue.shift();
+    const curr = items.find((it) => it.id === currId);
+    if (!curr) continue;
+
+    for (let i = 0; i < items.length; i++) {
+      const other = items[i];
+      if (other.id === curr.id) continue;
+
+      const cw = curr.w ?? 220;
+      const ch = curr.h ?? 55;
+      const ow = other.w ?? 220;
+      const oh = other.h ?? 55;
+
+      const overlapX = curr.x < other.x + ow && curr.x + cw > other.x;
+      const overlapY = curr.y < other.y + oh && curr.y + ch > other.y;
+
+      if (overlapX && overlapY) {
+        other.y = curr.y + ch;
+        other.y = Math.round(other.y / 55) * 55;
+        queue.push(other.id);
+      }
+    }
+  }
 }
 
 function clamp(v, min, max) {
@@ -470,6 +607,7 @@ function CanvasItem({
   onTextChange,
   onResizeCommit,
   onRemove,
+  scale,
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
@@ -497,8 +635,8 @@ function CanvasItem({
     let lastH = startH;
 
     const onMove = (ev) => {
-      const dx = ev.clientX - startX;
-      const dy = ev.clientY - startY;
+      const dx = (ev.clientX - startX) / scale;
+      const dy = (ev.clientY - startY) / scale;
       const maxAllowedW = Math.min(MAX_ITEM_WIDTH, CANVAS_WIDTH - item.x);
       const maxAllowedH = Math.min(CANVAS_HEIGHT, CANVAS_HEIGHT - item.y);
       lastW = clamp(snap(startW + dx, GRID_X), MIN_ITEM_WIDTH, maxAllowedW);
@@ -525,13 +663,13 @@ function CanvasItem({
 
   const style = {
     position: "absolute",
-    left: item.x,
-    top: item.y,
-    width: displayedW,
-    height: displayedH,
+    left: `${item.x}px`,
+    top: `${item.y}px`,
+    width: `${displayedW}px`,
+    height: `${displayedH}px`,
     transform:
       transform && !isResizing
-        ? `translate3d(${snap(transform.x, GRID_X)}px, ${snap(transform.y, GRID_Y)}px, 0)`
+        ? `translate3d(${snap(transform.x / scale, GRID_X)}px, ${snap(transform.y / scale, GRID_Y)}px, 0)`
         : undefined,
     zIndex: isDragging || isResizing ? 50 : item.z ?? 1,
     transition: isDragging ? "none" : "transform 0.1s ease-out, left 0.2s ease-out, top 0.2s ease-out",

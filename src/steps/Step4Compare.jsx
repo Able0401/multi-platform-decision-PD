@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useStore } from "../state/store";
+import { useStore, useCustomComponents } from "../state/store";
 import { uid } from "../utils/id";
 import ComponentCard from "../kit/ComponentCard";
 import { downloadElementPNG } from "../utils/exportUtils";
@@ -249,11 +249,13 @@ function ParticipantCanvasCard({
 
 const CANVAS_WIDTH = 440;
 const CANVAS_HEIGHT = 880;
-const FALLBACK_WIDTH = 240;
+const FALLBACK_WIDTH = 220;
+const FALLBACK_HEIGHT = 55;
 
 function MiniCanvas({ items }) {
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const customs = useCustomComponents();
 
   // Observe the container width to calculate scale factor
   useEffect(() => {
@@ -285,24 +287,31 @@ function MiniCanvas({ items }) {
           position: "relative",
         }}
       >
-        {items.map((it) => (
-          <div
-            key={it.id}
-            style={{
-              position: "absolute",
-              left: it.x,
-              top: it.y,
-              width: it.w ?? FALLBACK_WIDTH,
-              zIndex: it.z ?? 1,
-            }}
-          >
-            <ComponentCard
-              componentId={it.componentId}
-              text={it.text}
-              variant="preview"
-            />
-          </div>
-        ))}
+        {items.map((it) => {
+          const def = findComponent(it.componentId, customs);
+          const w = it.w ?? def?.defaultWidth ?? FALLBACK_WIDTH;
+          const h = it.h ?? def?.defaultHeight ?? FALLBACK_HEIGHT;
+          return (
+            <div
+              key={it.id}
+              style={{
+                position: "absolute",
+                left: `${it.x}px`,
+                top: `${it.y}px`,
+                width: `${w}px`,
+                height: `${h}px`,
+                zIndex: it.z ?? 1,
+              }}
+            >
+              <ComponentCard
+                componentId={it.componentId}
+                text={it.text}
+                variant="preview"
+                h={h}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

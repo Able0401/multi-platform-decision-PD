@@ -296,6 +296,10 @@ function JourneyCard({
   onRemoveEmotion,
 }) {
   const isLast = index === total - 1;
+  const [isOther, setIsOther] = useState(
+    Boolean(card.app && !APP_SUGGESTIONS.includes(card.app))
+  );
+
   return (
     <div className="flex w-[260px] flex-shrink-0 flex-col gap-2 rounded-card border border-ink-100 bg-white p-3 shadow-card">
       <div className="flex items-center justify-between gap-1">
@@ -334,18 +338,51 @@ function JourneyCard({
         <div className="label-bi-sub mb-1">
           App <span className="text-ink-300">앱</span>
         </div>
-        <input
-          className="input"
-          list="app-suggestions"
-          placeholder="Type any app or pick from list (직접 입력 가능)"
-          value={card.app}
-          onChange={(e) => onChange({ app: e.target.value })}
-        />
-        <datalist id="app-suggestions">
-          {APP_SUGGESTIONS.map((a) => (
-            <option key={a} value={a} />
-          ))}
-        </datalist>
+        {!isOther ? (
+          <select
+            className="input w-full appearance-none bg-white"
+            value={card.app || ""}
+            onChange={(e) => {
+              if (e.target.value === "__OTHER__") {
+                setIsOther(true);
+                onChange({ app: "" });
+              } else {
+                setIsOther(false);
+                onChange({ app: e.target.value });
+              }
+            }}
+          >
+            <option value="" disabled>
+              앱을 선택하세요 (Select app)
+            </option>
+            {APP_SUGGESTIONS.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+            <option value="__OTHER__">기타 (직접 입력)</option>
+          </select>
+        ) : (
+          <div className="flex gap-1">
+            <input
+              autoFocus
+              className="input flex-1"
+              placeholder="앱 이름 입력 (Type app name)"
+              value={card.app}
+              onChange={(e) => onChange({ app: e.target.value })}
+            />
+            <button
+              className="btn-ghost !px-2 border border-ink-100"
+              onClick={() => {
+                setIsOther(false);
+                onChange({ app: "" });
+              }}
+              title="목록에서 선택 (Choose from list)"
+            >
+              ✕
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Saw what */}
@@ -379,7 +416,7 @@ function JourneyCard({
             </>
           ) : (
             <>
-              Why switch? <span className="text-ink-300">다음 앱으로 넘어간 이유</span>
+              Why chose this app? <span className="text-ink-300">이 앱을 고른 이유</span>
             </>
           )}
         </div>
@@ -388,7 +425,7 @@ function JourneyCard({
           placeholder={
             isLast
               ? "I finally chose ___ because ___"
-              : "별점은 봤는데 분위기가 안 보여서…"
+              : "리뷰를 더 자세히 보고 싶어서..."
           }
           value={card.switchReason}
           onChange={(e) => onChange({ switchReason: e.target.value })}
