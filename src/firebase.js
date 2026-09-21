@@ -2,13 +2,12 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDM7yJo55287dt9InWcrFvv7_JNMgjTXtU",
-  authDomain: "multi-platform-decision-pd.firebaseapp.com",
-  projectId: "multi-platform-decision-pd",
-  storageBucket: "multi-platform-decision-pd.firebasestorage.app",
-  messagingSenderId: "568377592330",
-  appId: "1:568377592330:web:368f6c0c0b819ff3082df3",
-  measurementId: "G-ZZHT9W16W9",
+  apiKey: "AIzaSyA3lvTJ7BDfJu4-IhPOiczRPx7-_J_KGmE",
+  authDomain: "mpdt-demo-able0401.firebaseapp.com",
+  projectId: "mpdt-demo-able0401",
+  storageBucket: "mpdt-demo-able0401.firebasestorage.app",
+  messagingSenderId: "686735906277",
+  appId: "1:686735906277:web:263549020d80882402cb0c",
 };
 
 export const app = initializeApp(firebaseConfig);

@@ -53,7 +53,7 @@ The method follows the generative design work of Sanders, Stappers and colleague
 
 **Try it:** <https://multi-platform-decision-pd.vercel.app>
 
-Enter any name to start as a participant. The hosted demo writes to a shared database that other visitors can see, so use a throwaway name and leave out personal information. To try it privately, [run it locally](#run-locally) with your own Firebase project.
+Enter any name to start as a participant. The hosted demo runs on its own demo database, separate from the one used in the study, and other visitors can see what you enter there. Use a throwaway name and leave out personal information. To try it privately, [run it locally](#run-locally) with your own Firebase project.
 
 ## Session flow
 
@@ -126,7 +126,13 @@ npm install
 npm run dev
 ```
 
-The committed `src/firebase.js` points at the study's Firebase project. Replace `firebaseConfig` with the web config of your own Firebase project (Project settings → Your apps → Web app) and enable Firestore before running a session of your own.
+The committed `src/firebase.js` points at the public demo project. To run sessions of your own, create a Firebase project, add a web app, replace `firebaseConfig` with its config (Project settings → Your apps → Web app), create a Firestore database and deploy the included rules:
+
+```bash
+firebase deploy --only firestore:rules --project <your-project-id>
+```
+
+`firestore.rules` opens only the `participants` and `workshop/global` paths the app uses and denies everything else.
 
 ## Study context and team
 

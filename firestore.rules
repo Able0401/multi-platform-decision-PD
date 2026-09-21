@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// Public demo database. Anyone with the link can join a session, so only the
+// two paths the app uses are open; everything else is denied.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /participants/{participantId} {
+      allow read, write: if participantId.size() <= 100;
+    }
+    match /workshop/global {
+      allow read, write: if true;
+    }
+  }
+}
